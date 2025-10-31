@@ -1,0 +1,78 @@
+# Video Info Collector 配置文件
+
+# 视频文件扩展名配置
+video_extensions:
+  - .mp4
+  - .mkv
+  - .avi
+  - .mov
+  - .wmv
+  - .flv
+  - .m4v
+  - .webm
+  - .ts
+  - .mts
+
+# 文件大小格式化配置
+size_format:
+  precision: 2  # 小数位数
+  units: ["B", "K", "M", "G", "T"]
+  threshold: 1024  # 单位转换阈值
+
+# 标签验证配置
+tags:
+  max_length: 10  # 单个标签最大长度
+  max_count: 10   # 每个文件最大标签数
+  forbidden_chars: ["/", "\\", ":", "*", "?", "\"", "<", ">", "|", "\n", "\r", "\t"]
+  reserved_words: ["null", "undefined", "none", ""]
+
+# 路径配置
+logical_path:
+  max_length: 200  # 逻辑路径最大长度
+  separator: "/"   # 路径分隔符
+  forbidden_chars: ["*", "?", "\"", "<", ">", "|", "\n", "\r", "\t"]
+
+# 输出路径配置
+output_paths:
+  base_dir: "output/video_info_collector"
+  csv_dir: "csv"
+  database_dir: "database"
+  default_database: "video_database.db"
+  temp_csv_prefix: "temp_video_info_"
+
+# 数据库配置
+database:
+  default_name: "video_database.jsonl"
+  temp_prefix: "temp_video_info_"
+  backup_enabled: true
+  backup_count: 5
+  max_records_per_file: 50000  # 单文件最大记录数
+
+# FFmpeg配置
+ffmpeg:
+  command: "ffprobe"
+  timeout: 30  # 秒
+  fallback_enabled: true  # 启用moviepy备选方案
+  retry_count: 2
+  
+# 扫描配置
+scanning:
+  default_recursive: true
+  progress_update_interval: 10  # 每处理多少文件更新一次进度
+  max_file_size: 107374182400  # 100GB，超过此大小的文件跳过
+  min_file_size: 1048576       # 1MB，小于此大小的文件跳过
+
+# 性能配置
+performance:
+  max_workers: 4  # 并发处理线程数
+  chunk_size: 100  # 批处理大小
+  memory_limit: 1073741824  # 1GB内存限制
+
+# 日志配置
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file_enabled: true
+  file_name: "video_collector.log"
+  max_file_size: 10485760  # 10MB
+  backup_count: 3

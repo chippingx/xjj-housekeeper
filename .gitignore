@@ -1,0 +1,6 @@
+.DS_Store
+__pycache__
+.operation_log_*
+.backup_*
+poetry.lock
+rename_rules.yaml
