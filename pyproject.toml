@@ -43,6 +43,11 @@ pytest-xdist = "^3.5.0"
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+]
+
 # 系统依赖说明
 # 以下系统依赖需要手动安装：
 # - FFmpeg (包含 ffprobe): 用于视频元数据提取

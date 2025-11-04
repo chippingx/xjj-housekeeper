@@ -6,7 +6,8 @@
 
 - 目标：为本地下载的视频文件提供整理工具集合。
   - 已实现：文件名规范化工具（filename_formatter）- **默认扁平化输出，安全重命名**
-  - 规划中：视频文件清单收集工具、跨平台 GUI（Windows/macOS）
+  - 已实现：视频信息收集工具（video_info_collector）- **视频元数据提取，CSV/JSON导出，SQLite存储**
+  - 规划中：跨平台 GUI（Windows/macOS）
 - 语言与版本：Python 3.10+
 - 管理与依赖：Poetry；运行依赖 pyyaml、python-dotenv；开发依赖 pytest、pytest-cov、pytest-mock、pytest-xdist
 - 系统依赖：FFmpeg (ffprobe)、SQLite3
@@ -23,11 +24,20 @@
     - __main__.py：支持 `python -m tools.filename_formatter`
     - README.md：工具说明与配置优先级文档
     - rename_rules.yaml：默认规则与设置（扩展名、最小文件大小、替换规则）
+  - video_info_collector/
+    - cli.py：命令行入口
+    - scanner.py：文件扫描逻辑
+    - metadata.py：视频元数据提取
+    - csv_writer.py：CSV导出功能
+    - sqlite_storage.py：SQLite数据库存储
+    - README.md：工具说明与使用指南
 - tests/
   - conftest.py：将项目根加入 sys.path，便于导入
   - tool_filename_formatter/
     - test_filename_formatter.py：核心逻辑单测
     - test_cli_filename_formatter.py：CLI 单测
+  - tool_video_info_collector/
+    - 完整的单元测试套件
 
 ## 3. 安装与运行
 
@@ -53,6 +63,7 @@
   - `python -m tools.filename_formatter <目录路径>`
 - 视频信息收集工具：
   - `python -m tools.video_info_collector scan <目录路径>`
+  - `python -m tools.video_info_collector merge <临时文件路径>`
 
 ## 4. 配置与优先级
 
@@ -149,7 +160,7 @@
   - 标准格式文件：`TST-005/TST-005.mp4`
   - 需要清理后缀：`TST-004ch/TST-004ch.mp4`
   - 复杂前后缀：`TST-006_CH.HD/TST-006_CH-nyap2p.com.mp4`
-  - 网站前缀：`btnets.net_TST-002.mp4`
+  - 网站前缀：`example1.net_TST-002.mp4`
   - 根目录文件：`TST-001.mp4`
 
 - **测试流程**：
@@ -298,7 +309,7 @@ would skip: target exists: /path/to/videos/sub/ABC123.mp4 -> /path/to/videos/ABC
   - CLI 选项：`--no-recursive`/`--min-size`/`--exts`/`--rules`/`--dry-run`/`--verbose`/`--json`
   - 打印真实规则文件路径；详细统计与原因分布
 - 中期
-  - 新增“视频文件清单收集”工具（扫描目录导出 CSV/JSON：名称、大小、扩展名、时间戳等）
+  - 视频信息收集工具功能增强（标签管理、高级过滤、批量操作）
   - 简易 GUI（PySide6/Tkinter 或 Web 前端 + 本地服务）
   - 打包分发（pip 包、命令入口点）
 
@@ -307,10 +318,11 @@ would skip: target exists: /path/to/videos/sub/ABC123.mp4 -> /path/to/videos/ABC
 - Python
   - `from tools.filename_formatter import FilenameFormatter`
   - `fmt = FilenameFormatter(video_extensions=None, min_file_size=None, default_rules_path=None)`
-  - `fmt.apply_rename_rules("kfa55.com@ABC123ch.mp4")  # -> "ABC-123.mp4"`
+  - `fmt.apply_rename_rules("site1234.com@ABC123ch.mp4")  # -> "ABC-123.mp4"`
   - `fmt.rename_in_directory("/path", include_subdirs=True)  # -> List[RenameResult]`
 - CLI
-  - `python -m tools.filename_formatter /path/to/videos`
+  - 文件名规范化：`python -m tools.filename_formatter /path/to/videos`
+  - 视频信息收集：`python -m tools.video_info_collector scan /path/to/videos`
   - 环境变量：`RENAME_RULES_PATH`、`MIN_VIDEO_SIZE_BYTES`
 
 ## 14. 当前工作状态（2024年最新）
@@ -444,4 +456,5 @@ would skip: target exists: /path/to/videos/sub/ABC123.mp4 -> /path/to/videos/ABC
 - 开发依赖：pytest、pytest-cov、pytest-mock、pytest-xdist
 - 系统依赖：FFmpeg (ffprobe)、SQLite3
 - 构建：Poetry（poetry-core）
-- 最后更新：2024年（依赖维护和回归测试完成）
+- 工具状态：filename_formatter（完成）、video_info_collector（完成）
+- 最后更新：2024年（依赖维护、回归测试、安全规范优化完成）

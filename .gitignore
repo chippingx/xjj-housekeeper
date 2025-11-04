@@ -4,3 +4,6 @@ __pycache__
 .backup_*
 poetry.lock
 rename_rules.yaml
+
+# 程序输出目录
+output/
