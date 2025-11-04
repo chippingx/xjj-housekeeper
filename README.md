@@ -1,109 +1,115 @@
 # xjj_housekeeper
 
-面向“本地下载视频文件”的整理工具集合。当前已提供文件名规范化工具（filename_formatter），后续将增加“视频文件清单收集”与可视化界面。
+本地视频文件整理与信息管理工具集，包含「文件名规范化」与「视频信息收集」两大子工具。项目内置测试与提交钩子，遵循“无迁移无兼容政策”，保证代码质量与简单架构。
 
-## 工具索引
+## 工具
 
-- **文件名规范化**（tools/filename_formatter）
-  - 说明与配置详见：tools/filename_formatter/README.md
-  - 支持按规则清理前缀/后缀并格式化为标准名称
-  - 按配置处理扩展名（默认 .mp4/.mkv/.mov）与最小文件大小（默认 100MB）
+- 文件名规范化工具（`tools/filename_formatter`）
+  - 批量规范化/重命名视频文件名（例如将 123ABC.mp4 → ABC-123.mp4）
+  - 默认扁平化输出到根目录，支持预览模式、冲突自动重命名与操作日志
+  - 规则通过 YAML 配置（`tools/filename_formatter/rename_rules.yaml`），支持环境变量覆盖
+  - 详细说明：`tools/filename_formatter/README.md`
 
-- **视频信息收集**（tools/video_info_collector）
-  - 说明与配置详见：tools/video_info_collector/README.md
-  - 使用 FFmpeg 提取视频元数据（分辨率、时长、编码等）
-  - 支持 CSV/JSON 导出和 SQLite 数据库存储
+- 视频信息收集工具（`tools/video_info_collector`）
+  - 批量收集视频元数据（文件名、相对路径、大小、时长、创建时间）并支持标签与逻辑路径
+  - 两阶段工作流：临时 CSV 收集 → 合并到 SQLite 主数据库；支持导出/查询/统计
+  - 适用于大规模视频库管理与后续数据分析
+  - 详细说明：`tools/video_info_collector/README.md`
 
 ## 快速开始
 
-### 1) 环境要求
-- Python 3.10+
-- 系统依赖：
-  - **FFmpeg** (包含 ffprobe)：用于视频元数据提取
-    - macOS: `brew install ffmpeg`
-    - Ubuntu/Debian: `sudo apt-get install ffmpeg`
-    - Windows: 下载并安装 FFmpeg 二进制文件
-  - **SQLite3**: 通常系统自带，Python 内置支持
+- 环境要求：
+  - Python 3.10+
+  - 推荐安装 `ffmpeg`（用于提取视频时长等元数据）
+  - 可选安装 `sqlite3`（用于本地查看数据库文件）
 
-### 2) 安装依赖
-推荐使用 Poetry 管理依赖：
+- 安装依赖：
+  - Poetry：`poetry install`
+  - 或 pip：`pip install -r requirements.txt`
 
-**基础安装**：
-```bash
-poetry install
-```
+- 安装提交钩子：
+  - 在项目根目录执行：`./setup_hooks.sh`
+  - 该钩子在提交前自动检查是否有违反“无迁移无兼容政策”的代码
 
-**开发环境**（包含测试工具）：
-```bash
-poetry install --with dev,test
-```
+## 命令用法
 
-**或使用 pip**：
-```bash
-# 运行依赖
-pip install pyyaml python-dotenv
+- 文件名规范化（filename_formatter）：
+  - 基本用法：`python -m tools.filename_formatter <目录路径>`
+  - 预览模式：`python -m tools.filename_formatter <目录路径> --dry-run`
+  - 冲突自动重命名：`python -m tools.filename_formatter <目录路径> --conflict-resolution rename`
+  - 更多参数与示例见 `tools/filename_formatter/README.md`
 
-# 开发依赖（可选）
-pip install pytest pytest-cov pytest-mock pytest-xdist
-```
+- 视频信息收集（video_info_collector）：
+  - 收集到临时 CSV：`python -m tools.video_info_collector /path/to/videos`
+  - 添加标签/逻辑路径：`python -m tools.video_info_collector /path/to/videos --tags "动作片;高清" --path "电影/动作片/2024"`
+  - 指定扩展名与递归：`python -m tools.video_info_collector /path/to/videos --extensions .mp4,.mkv --recursive`
+  - 合并到主库：`python -m tools.video_info_collector --merge temp_collection.csv --database output/video_info_collector/database/video_database.db --duplicate-strategy update`
+  - 导出为 CSV：`python -m tools.video_info_collector --export output/video_info_collector/database/video_database.db --format csv --output output/video_info_collector/csv/exported_data.csv`
+  - 通过视频code查询：`python -m tools.video_info_collector --search-video-code "ABC-123,DEF-456"`
+  - 统计信息：`python -m tools.video_info_collector stats --type basic`
+  - 完整用法见 `tools/video_info_collector/README.md`
 
-### 3) 运行工具
+### 示例输出（文件名规范化）
 
-**文件名规范化工具**（递归处理子目录）：
-```bash
-python -m tools.filename_formatter <目录路径>
-```
-
-**视频信息收集工具**：
-```bash
-python -m tools.video_info_collector scan <目录路径>
-```
-
-示例输出（节选）：
 ```
 处理目录: /path/to/videos
 处理扩展名: .mp4, .mkv, .mov
 最小文件大小: 104857600 字节
 使用规则文件: tools/filename_formatter/rename_rules.yaml
 递归子目录: 是
+扁平化输出: 是（默认）
+
 success: /path/to/videos/sub/ABC123.mp4 -> /path/to/videos/ABC-123.mp4
 success: /path/to/videos/sub2/DEF456ch.mp4 -> /path/to/videos/DEF-456.mp4
-...
+skipped: same name: /path/to/videos/TST-001.mp4 -> /path/to/videos/TST-001.mp4
+would skip: target exists: /path/to/videos/sub/ABC-123.mp4 -> /path/to/videos/ABC-123.mp4
+
+统计:
+- 总计: 4
+- 成功: 2
+- 跳过(目标已存在): 1
+- 跳过(同名): 1
+- 失败: 0
 ```
 
-## 配置与环境变量
+## 项目结构
 
-- 配置文件：tools/filename_formatter/rename_rules.yaml
-  - settings.video_extensions：处理的扩展名列表（默认 [".mp4", ".mkv", ".mov"]）
-  - settings.min_file_size_bytes：最小文件大小阈值（字节，默认 100MB）
-  - rename_rules：字符串替换规则（用于清理站点前缀/后缀等）
-- 环境变量：
-  - RENAME_RULES_PATH：指定规则/配置 YAML 的路径（绝对路径或相对项目根）
-  - MIN_VIDEO_SIZE_BYTES：覆盖最小文件大小阈值（字节）
+- `tools/filename_formatter/` - 文件名规范化工具与 `rename_rules.yaml`
+- `tools/video_info_collector/` - 视频信息收集工具（扫描、合并、查询、统计）
+- `tests/` - 测试用例（两大子工具均有覆盖）
+- `.githooks/pre-commit` - 提交前检查脚本
+- `setup_hooks.sh` - 安装 Git 钩子的脚本
+- `NO_MIGRATION_POLICY.md` - 无迁移无兼容政策说明
 
-优先级详情与完整示例请查看 tools/filename_formatter/README.md。
+## 无迁移无兼容政策
+
+- 项目严格禁止迁移和向后兼容代码路径，保持架构简洁。
+- 允许只读的结构自检与信息查询（例如测试中的 `PRAGMA table_info`）。
+- 如需修改数据库结构，直接在创建函数中定义完整结构并重建数据库。
+- 详情见 `NO_MIGRATION_POLICY.md`。
 
 ## 测试
 
-运行全部单元测试：
-```bash
-pytest -q
-```
+- 运行全部测试：`pytest -q`
+- 仅运行视频信息收集工具相关测试：`python -m pytest tests/tool_video_info_collector/ -q`
 
-运行测试并生成覆盖率报告：
-```bash
-pytest --cov=tools --cov-report=html
-```
+## 路线图（Roadmap）
 
-运行并行测试（加速）：
-```bash
-pytest -n auto
-```
+- 已完成：
+  - 文件名规范化工具：规则驱动、预览、安全重命名、扁平化输出
+  - 视频信息收集工具：临时收集、合并主库、查询、统计、导出
+  - 提交钩子与政策文档：安装脚本与违规拦截
 
-## 路线图
+- 计划中：
+  - GUI（图形界面）浏览与管理
+  - 更丰富的统计报表与图表导出
+  - 批量数据导入/导出的增强
 
-- 新增“视频文件清单收集”工具：扫描目录并输出名称、大小、格式信息与时间戳等
-- 增强文档与示例
-- 提供跨平台 GUI（Windows/macOS）
+## 常见问题
 
-如需功能调整（扩展名范围、阈值、规则文件位置等），请优先修改 YAML 配置或设置环境变量。欢迎提出改进建议或新需求。
+- 为什么提交被阻止？
+  - 可能包含迁移/兼容相关代码。执行 `./setup_hooks.sh` 以安装钩子，并参考 `NO_MIGRATION_POLICY.md` 清理相关代码。
+- 如何修改文件重命名规则？
+  - 编辑 `tools/filename_formatter/rename_rules.yaml` 或设置环境变量 `RENAME_RULES_PATH` 指向自定义配置。
+- 如何查看/分析主数据库？
+  - 使用浏览器 SQLite 插件或命令行工具 `sqlite3`，也可通过导出为 CSV 分析。
