@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>XJJ Housekeeper 本地客户端原型 · 简版</title>
+    <style>
+      :root {
+        --bg: #f7f9fc;
+        --panel: #ffffff;
+        --text: #1f2937;
+        --muted: #6b7280;
+        --border: #e5e7eb;
+        --accent: #2563eb;
+        --accent-hover: #1e40af;
+        --accent-soft: #e6f0ff;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      }
+      .topbar {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
+      }
+      .brand { font-weight: 600; }
+      .nav { display: flex; gap: 8px; }
+      .nav .pill { border: 1px solid var(--border); background: #fff; color: var(--text); border-radius: 999px; padding: 6px 12px; cursor: pointer; transition: background-color .15s, border-color .15s; }
+      .nav .pill:hover { background: #f8fafc; }
+      .nav .pill.active { border-color: var(--accent); background: var(--accent-soft); }
+      .container { max-width: 1000px; margin: 20px auto; padding: 0 16px; }
+      .page { display: none; }
+      .page.visible { display: block; }
+      .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: 0 10px 30px rgba(31,41,55,.06); }
+      h1 { font-size: 22px; margin: 0 0 8px; }
+      h2 { font-size: 18px; margin: 8px 0; }
+      .subtitle { color: var(--muted); margin-bottom: 14px; }
+      .form-row { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
+      .form-row input[type="text"], .form-row select { flex: 1; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; transition: border-color .15s, box-shadow .15s; }
+      .form-row input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); outline: none; }
+      .btn { border: 1px solid var(--border); background: #fff; color: var(--text); border-radius: 8px; padding: 8px 12px; cursor: pointer; transition: background-color .15s, border-color .15s, color .15s; }
+      .btn:hover { background: #f8fafc; }
+      .btn-primary { border-color: var(--accent); background: var(--accent-soft); }
+      .btn-primary:hover { border-color: var(--accent-hover); }
+      .muted { color: var(--muted); font-size: 12px; }
+      .table-wrap { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+      table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      thead { background: #f3f4f6; }
+      th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+      tbody tr:nth-child(odd) { background: #fafafa; }
+      tbody tr:hover { background: #eef2ff; }
+      .progress { width: 100%; height: 8px; border-radius: 999px; background: var(--border); overflow: hidden; }
+      .bar { height: 100%; background: var(--accent); }
+      .tabs { display: flex; gap: 8px; margin-bottom: 10px; }
+      .tab { border: 1px solid var(--border); background: #fff; border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 14px; }
+      .tab.active { border-color: var(--accent); background: var(--accent-soft); }
+      .tab-content { display: none; }
+      .tab-content.visible { display: block; }
+      .footer { text-align: center; color: var(--muted); font-size: 12px; margin: 16px 0; }
+      .empty { text-align: center; color: var(--muted); padding: 10px; }
+      .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+      body.modal-open { overflow: hidden; }
+      /* 模态框与遮罩 */
+      .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: none; align-items: center; justify-content: center; z-index: 1000; }
+      .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; min-width: 280px; box-shadow: 0 10px 30px rgba(31,41,55,.15); }
+      .modal h3 { margin: 0 0 8px; font-size: 18px; }
+      .modal p { margin: 8px 0 12px; color: var(--muted); }
+      .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">XJJ Housekeeper</div>
+      <nav class="nav">
+        <button class="pill" data-target="page-maintain">维护视频数据</button>
+      </nav>
+    </header>
+
+    <main class="container">
+      <!-- 查询为主界面 -->
+      <section id="page-query" class="page visible">
+        <div class="card">
+          <h1>查询视频</h1>
+          <div class="form-row">
+            <input id="searchInput" type="text" placeholder="输入视频编号或关键字，例如：ABC-123 或 电影" />
+            <button id="searchBtn" class="btn btn-primary">查询</button>
+          </div>
+          <div id="results" class="table-wrap" style="display:none;">
+            <table>
+              <thead>
+                <tr><th>视频</th><th>大小</th><th>路径</th></tr>
+              </thead>
+              <tbody id="resultsBody">
+                <!-- 由脚本填充示例数据 -->
+              </tbody>
+            </table>
+          </div>
+          <div id="resultsEmpty" class="empty" style="display:none;">请输入关键词进行查询</div>
+        </div>
+      </section>
+
+      <!-- 维护入口（单一维护流程：扫描后自动合并） -->
+      <section id="page-maintain" class="page">
+        <div class="card">
+          <h1>维护视频数据</h1>
+          <div class="form-row"><input id="dirInput" type="text" placeholder="扫描目录路径，例如：/Volumes/Media/videos" /><button class="btn">选择目录</button></div>
+          <div class="form-row"><input id="tagsInput" type="text" placeholder="标签（可选），例如：电影, 高清" /></div>
+          <div class="form-row" style="display:none;"><input id="logicalInput" type="text" placeholder="逻辑路径（可选），例如：媒体库/电影/2024" /></div>
+          <div class="form-row"><button class="btn btn-primary" id="maintainBtn">开始维护</button></div>
+        </div>
+      </section>
+
+      <p class="footer">配色：白/浅灰/淡蓝。原型仅展示界面职责与跳转关系，不连接真实后端。</p>
+    </main>
+
+    <!-- 处理中遮罩与完成弹框 -->
+    <div id="modalProcessing" class="modal-overlay" role="dialog" aria-modal="true" aria-label="处理中">
+      <div class="modal" tabindex="-1">
+        <h3>处理中</h3>
+        <p>正在维护数据，请稍候…期间无法操作。</p>
+      </div>
+    </div>
+
+    <div id="modalComplete" class="modal-overlay" role="dialog" aria-modal="true" aria-label="维护完成">
+      <div class="modal" tabindex="-1">
+        <h3>维护完成</h3>
+        <p>已完成扫描并自动合并到数据库。</p>
+        <div class="modal-actions">
+          <button class="btn btn-primary" id="returnToQuery">返回查询</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // 导航：仅一个维护入口，默认进入查询页
+      const pills = document.querySelectorAll('.pill');
+      const pages = document.querySelectorAll('.page');
+      const nav = document.querySelector('.topbar .nav');
+      const topPill = document.querySelector('.topbar .pill');
+      function showPage(id) {
+        pages.forEach(p => p.classList.remove('visible'));
+        const target = document.getElementById(id);
+        if (target) target.classList.add('visible');
+        pills.forEach(n => n.classList.toggle('active', n.dataset.target === id));
+        // 动态调整右上角入口：在维护页显示“返回查询”，在查询页显示“维护视频数据”
+        if (topPill) {
+          if (id === 'page-maintain') {
+            topPill.textContent = '返回查询';
+            topPill.dataset.target = 'page-query';
+          } else {
+            topPill.textContent = '维护视频数据';
+            topPill.dataset.target = 'page-maintain';
+          }
+        }
+        // 在查询页自动聚焦搜索框
+        if (id === 'page-query') {
+          setTimeout(() => searchInput && searchInput.focus(), 0);
+        }
+      }
+      // 顶部导航使用事件委托，确保动态切换data-target后仍可点击跳转
+      if (nav) {
+        nav.addEventListener('click', (e) => {
+          const btn = e.target.closest('.pill');
+          if (btn && btn.dataset && btn.dataset.target) {
+            showPage(btn.dataset.target);
+          }
+        });
+      }
+      // 其他拥有 data-target 的局部按钮仍绑定直接事件（如返回按钮等）
+      document.querySelectorAll('[data-target]')
+        .forEach(btn => {
+          if (!btn.classList.contains('pill')) {
+            btn.addEventListener('click', () => showPage(btn.dataset.target));
+          }
+        });
+
+      // 查询：简易示例数据填充
+      const searchBtn = document.getElementById('searchBtn');
+      const searchInput = document.getElementById('searchInput');
+      const results = document.getElementById('results');
+      const resultsBody = document.getElementById('resultsBody');
+      const resultsEmpty = document.getElementById('resultsEmpty');
+      function performSearch() {
+        const q = (searchInput.value || '').trim();
+        if (!q) {
+          results.style.display = 'none';
+          resultsEmpty.style.display = 'block';
+          resultsEmpty.textContent = '请输入关键词进行查询';
+          return;
+        }
+        resultsBody.innerHTML = `
+          <tr><td>ABC-123</td><td>5.55G</td><td>/Volumes/.../videos</td></tr>
+          <tr><td>DEF-456</td><td>2.62G</td><td>/Volumes/.../videos</td></tr>
+        `;
+        results.style.display = 'block';
+        resultsEmpty.style.display = 'none';
+      }
+      searchBtn.addEventListener('click', performSearch);
+      searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') performSearch(); });
+
+      // 维护数据：一步完成（扫描 → 自动合并）
+      const maintainBtn = document.getElementById('maintainBtn');
+      const modalProcessing = document.getElementById('modalProcessing');
+      const modalComplete = document.getElementById('modalComplete');
+      const returnToQuery = document.getElementById('returnToQuery');
+      maintainBtn.addEventListener('click', () => {
+        // 显示处理中遮罩，阻止操作
+        modalProcessing.style.display = 'flex';
+        document.body.classList.add('modal-open');
+        setTimeout(() => {
+          // 完成后展示完成弹框
+          modalProcessing.style.display = 'none';
+          modalComplete.style.display = 'flex';
+          const modal = modalComplete.querySelector('.modal');
+          if (modal) modal.focus();
+        }, 1500);
+      });
+      returnToQuery.addEventListener('click', () => {
+        modalComplete.style.display = 'none';
+        document.body.classList.remove('modal-open');
+        showPage('page-query');
+      });
+
+      // 键盘 Esc 关闭完成弹框（处理中遮罩不允许关闭）
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modalComplete.style.display === 'flex') {
+          modalComplete.style.display = 'none';
+          document.body.classList.remove('modal-open');
+          showPage('page-query');
+        }
+      });
+
+      // 初始化数据库入口暂不开放（已隐藏，不提供交互）
+
+      // 初始显示
+      showPage('page-query');
+    </script>
+  </body>
+</html>

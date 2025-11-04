@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>XJJ Housekeeper · 高保真（维护完成 · 移动 375×667）</title>
+    <style>
+      :root { --bg:#f7f9fc; --panel:#ffffff; --text:#1f2937; --muted:#6b7280; --border:#e5e7eb; --accent:#2563eb; --accent-soft:#e6f0ff; }
+      *{box-sizing:border-box} html,body{height:100%}
+      body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;display:grid;place-items:center;padding:16px}
+      .device-frame{width:375px;height:667px;background:var(--panel);border:1px solid var(--border);border-radius:20px;overflow:hidden;box-shadow:0 16px 40px rgba(31,41,55,.12);display:flex;flex-direction:column}
+      .topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--panel);border-bottom:1px solid var(--border)}
+      .brand{font-weight:600;font-size:14px}
+      .nav .pill{border:1px solid var(--border);background:#fff;color:var(--text);border-radius:999px;padding:4px 10px;font-size:12px}
+      .container{padding:12px}
+      .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;box-shadow:0 8px 24px rgba(31,41,55,.08)}
+      h1{font-size:18px;margin:0 0 8px}
+      .actions{display:grid;grid-template-columns:1fr;gap:8px;margin-top:4px}
+      .btn{border:1px solid var(--border);background:#fff;color:var(--text);border-radius:8px;padding:10px 12px;font-size:14px}
+      .btn-primary{border-color:var(--accent);background:var(--accent-soft)}
+      .footer{text-align:center;color:var(--muted);font-size:11px;margin:8px 0 0}
+      /* 原型样式的遮罩与弹框 */
+      .modal-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
+      .modal{background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:0 10px 30px rgba(31,41,55,.12);padding:16px;width:320px;max-width:calc(100% - 32px)}
+      .modal h3{margin:0 0 8px;font-size:16px}
+      .modal p{margin:8px 0 12px;color:var(--muted);font-size:12px}
+      .modal-actions{display:flex;justify-content:flex-end;gap:8px}
+    </style>
+  </head>
+  <body>
+    <div class="device-frame">
+      <header class="topbar">
+        <div class="brand">XJJ</div>
+        <nav class="nav"><button class="pill">返回查询</button></nav>
+      </header>
+      <main class="container">
+        <section class="page visible">
+          <div class="card">
+            <h1>维护视频数据</h1>
+            <div class="actions">
+              <input type="text" placeholder="扫描目录路径，例如：/Volumes/Media/videos" />
+              <button class="btn">选择目录</button>
+              <input type="text" placeholder="标签（可选），例如：电影, 高清" />
+              <input type="text" placeholder="逻辑路径（可选），例如：媒体库/电影/2024" style="display:none;" />
+              <button class="btn btn-primary">开始维护</button>
+            </div>
+          </div>
+        </section>
+        <p class="footer">高保真示意 · 维护流程 · 移动 375×667</p>
+      </main>
+      <!-- 维护完成弹框（静态展示） -->
+      <div class="modal-overlay" role="dialog" aria-modal="true" aria-label="维护完成" style="display:flex;">
+        <div class="modal" tabindex="-1">
+          <h3>维护完成</h3>
+          <p>已完成扫描并自动合并到数据库。</p>
+          <div class="modal-actions">
+            <button class="btn btn-primary">返回查询</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+  </html>
