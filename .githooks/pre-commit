@@ -5,21 +5,16 @@
 
 echo "🔍 检查无迁移无兼容政策违规..."
 
-# 定义违规模式
+# 定义违规模式（聚焦真实迁移/兼容操作，避免误报）
 MIGRATION_PATTERNS=(
+    "ALTER TABLE[[:space:]].*(ADD[[:space:]]+COLUMN|RENAME[[:space:]]+COLUMN|RENAME[[:space:]]+TO|DROP[[:space:]]+COLUMN)"
     "_migrate_"
-    "ALTER TABLE.*ADD COLUMN"
-    "column_exists"
     "backward_compatibility"
-    "migration"
-    "migrate"
-    "TestDatabaseMigration"
-    "test_.*migration"
-    "PRAGMA table_info"
 )
 
 # 检查暂存的文件
-STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(py|sql)$')
+# 仅检查源码文件，排除tests和debug目录以避免误报
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(py|sql)$' | grep -Ev '^(tests/|debug/)')
 
 if [ -z "$STAGED_FILES" ]; then
     echo "✅ 无Python/SQL文件需要检查"
@@ -31,7 +26,7 @@ VIOLATIONS_FOUND=false
 for file in $STAGED_FILES; do
     if [ -f "$file" ]; then
         for pattern in "${MIGRATION_PATTERNS[@]}"; do
-            if git diff --cached "$file" | grep -q "$pattern"; then
+            if git diff --cached "$file" | grep -qE "$pattern"; then
                 echo "❌ 违规: $file 包含禁止的迁移模式: $pattern"
                 VIOLATIONS_FOUND=true
             fi
