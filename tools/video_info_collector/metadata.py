@@ -7,8 +7,42 @@
 import json
 import os
 import subprocess
+import hashlib
+import re
 from datetime import datetime
 from typing import List, Optional, Dict, Any
+
+
+def extract_video_code(filename: str) -> Optional[str]:
+    """
+    从文件名中提取视频编码
+    
+    Args:
+        filename: 文件名
+        
+    Returns:
+        Optional[str]: 提取的视频编码，如果没有找到特定模式则返回None
+    """
+    if not filename:
+        return None
+    
+    # 定义多种视频编码格式的正则表达式
+    patterns = [
+        r'([A-Z]{2,5}-\d{3,5})(?=[\W_]|$)',      # 如 ABC-123, MIDE-456 (字母-数字，限制长度)
+        r'([A-Z]{3}-[A-Z]{3})(?=[\W_]|$)',       # 如 ABC-abc (3字母-3字母，严格格式)
+        r'([A-Z]+\d{3,})(?=[\W_]|$)',            # 如 SSIS123, PRED456
+        r'(\d{6}_\d{3})(?=[\W_]|$)',             # 如 123456_789
+        r'([A-Z]{3,}\-\d{2,})(?=[\W_]|$)',       # 如 STARS-123
+    ]
+    
+    for pattern in patterns:
+        # 使用不区分大小写的匹配，但返回原始字符串
+        match = re.search(pattern, filename, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    
+    # 如果没有匹配到特定模式，返回None
+    return None
 
 
 class VideoInfo:
@@ -41,8 +75,20 @@ class VideoInfo:
         self.tags: List[str] = tags or []
         self.logical_path: Optional[str] = logical_path
         
+        # 新增字段
+        self.video_code: Optional[str] = None
+        self.file_fingerprint: Optional[str] = None
+        self._file_status: str = 'present'  # present/missing/ignore/replaced
+        self.last_merge_time: Optional[datetime] = None
+        
         # 获取文件基本信息
         self._get_basic_info()
+        
+        # 提取video_code
+        self._extract_video_code()
+        
+        # 生成文件指纹
+        self._generate_fingerprint()
     
     def _get_basic_info(self):
         """获取文件基本信息"""
@@ -53,6 +99,41 @@ class VideoInfo:
                 self.created_time = datetime.fromtimestamp(stat.st_mtime)
         except (OSError, IOError):
             pass
+    
+    def _extract_video_code(self):
+        """提取视频编码"""
+        self.video_code = extract_video_code(self.filename)
+    
+    def _generate_fingerprint(self):
+        """生成文件指纹"""
+        if not self.filename:
+            return
+        
+        # 组合指纹信息：文件名 + 文件大小 + 创建时间 + video_code
+        fingerprint_data = []
+        
+        # 文件名（去除扩展名）
+        base_name = os.path.splitext(self.filename)[0]
+        fingerprint_data.append(base_name.lower())
+        
+        # 文件大小
+        if self.file_size is not None:
+            fingerprint_data.append(str(self.file_size))
+        
+        # 创建时间（精确到秒）
+        if self.created_time:
+            if hasattr(self.created_time, 'timestamp'):
+                fingerprint_data.append(str(int(self.created_time.timestamp())))
+            else:
+                fingerprint_data.append(str(self.created_time))
+        
+        # video_code
+        if self.video_code:
+            fingerprint_data.append(self.video_code.lower())
+        
+        # 生成MD5哈希
+        fingerprint_string = '|'.join(fingerprint_data)
+        self.file_fingerprint = hashlib.md5(fingerprint_string.encode('utf-8')).hexdigest()
     
     @property
     def resolution(self) -> Optional[str]:
@@ -74,6 +155,19 @@ class VideoInfo:
         
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
     
+    @property
+    def file_status(self) -> str:
+        """获取文件状态"""
+        return self._file_status
+    
+    @file_status.setter
+    def file_status(self, value: str):
+        """设置文件状态，验证有效性"""
+        valid_statuses = ['present', 'missing', 'ignore', 'replaced']
+        if value not in valid_statuses:
+            raise ValueError(f"Invalid file status '{value}'. Valid statuses are: {valid_statuses}")
+        self._file_status = value
+    
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典格式"""
         return {
@@ -91,7 +185,11 @@ class VideoInfo:
             'frame_rate': self.frame_rate,
             'created_time': self.created_time.isoformat() if self.created_time and hasattr(self.created_time, 'isoformat') else self.created_time,
             'tags': ';'.join(self.tags) if self.tags else '',
-            'logical_path': self.logical_path or ''
+            'logical_path': self.logical_path or '',
+            'video_code': self.video_code,
+            'file_fingerprint': self.file_fingerprint,
+            'file_status': self.file_status,
+            'last_merge_time': self.last_merge_time.isoformat() if self.last_merge_time and hasattr(self.last_merge_time, 'isoformat') else self.last_merge_time
         }
 
 

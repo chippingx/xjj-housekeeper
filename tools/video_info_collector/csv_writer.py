@@ -27,7 +27,7 @@ class CSVWriter:
         
         # CSV字段定义 - 符合README设计
         self.fieldnames = [
-            'file_path', 'filename', 'width', 'height', 'resolution',
+            'file_path', 'filename', 'video_code', 'file_fingerprint', 'width', 'height', 'resolution',
             'duration', 'duration_formatted', 'video_codec', 'audio_codec',
             'file_size', 'bit_rate', 'frame_rate', 'created_time',
             'tags', 'logical_path'

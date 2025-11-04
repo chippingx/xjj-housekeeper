@@ -18,7 +18,7 @@ tests/
 │   ├── TST-006_CH.HD/
 │   │   └── TST-006_CH-nyap2p.com.mp4  # 复杂前后缀
 │   ├── TST-001.mp4             # 根目录标准文件
-│   └── btnets.net_TST-002.mp4  # 网站前缀需清理
+│   └── example1.net_TST-002.mp4  # 网站前缀需清理
 └── tool_filename_formatter/     # 单元测试
     ├── test_filename_formatter.py
     └── test_cli_filename_formatter.py
@@ -40,7 +40,7 @@ tests/
 | `TST-005/TST-005.mp4` | 已标准化文件 | 保持不变 |
 | `TST-006_CH.HD/TST-006_CH-nyap2p.com.mp4` | 复杂前后缀 | `TST-006.mp4` |
 | `TST-001.mp4` | 根目录标准文件 | 保持不变 |
-| `btnets.net_TST-002.mp4` | 网站前缀 | `TST-002.mp4` |
+| `example1.net_TST-002.mp4` | 网站前缀 | `TST-002.mp4` |
 
 ### 文件格式
 - 所有 mp4 文件都是最小化的假文件（2KB），但保持有效的 mp4 格式

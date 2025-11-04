@@ -9,7 +9,11 @@ import csv
 import os
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime
-from .metadata import VideoInfo
+
+try:
+    from .metadata import VideoInfo
+except ImportError:
+    from metadata import VideoInfo
 
 
 class SQLiteStorage:
@@ -33,6 +37,8 @@ class SQLiteStorage:
         self.connection = sqlite3.connect(self.db_path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
     
+
+    
     def _create_tables(self):
         """创建数据表 - 符合README设计的三表结构"""
         cursor = self.connection.cursor()
@@ -55,7 +61,12 @@ class SQLiteStorage:
                 frame_rate REAL,
                 logical_path TEXT,
                 created_time TEXT NOT NULL,
-                updated_time TEXT DEFAULT CURRENT_TIMESTAMP
+                updated_time TEXT DEFAULT CURRENT_TIMESTAMP,
+                video_code TEXT,
+                file_fingerprint TEXT,
+                file_status TEXT DEFAULT 'present',
+                last_scan_time TEXT,
+                last_merge_time TEXT
             )
         """)
         
@@ -65,7 +76,7 @@ class SQLiteStorage:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 video_id INTEGER NOT NULL,
                 tag TEXT NOT NULL,
-                created_time TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (video_id) REFERENCES video_info (id) ON DELETE CASCADE,
                 UNIQUE(video_id, tag)
             )
@@ -85,6 +96,34 @@ class SQLiteStorage:
             )
         """)
         
+        # 视频主列表表 - 用于防重复下载和全局视角管理
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS video_master_list (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_code TEXT UNIQUE NOT NULL,
+                file_fingerprint TEXT,
+                status TEXT DEFAULT 'active',
+                file_count INTEGER DEFAULT 1,
+                first_seen TEXT DEFAULT CURRENT_TIMESTAMP,
+                last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+                notes TEXT
+            )
+        """)
+        
+        # 合并历史表 - 记录文件级操作日志
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS merge_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                merge_time TEXT DEFAULT CURRENT_TIMESTAMP,
+                event_type TEXT NOT NULL,
+                video_code TEXT,
+                old_path TEXT,
+                new_path TEXT,
+                details TEXT,
+                scan_session_id TEXT
+            )
+        """)
+        
         self.connection.commit()
     
     def _create_indexes(self):
@@ -96,14 +135,38 @@ class SQLiteStorage:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_video_filename ON video_info(filename)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_video_created_time ON video_info(created_time)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_video_logical_path ON video_info(logical_path)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_video_code ON video_info(video_code)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_video_fingerprint ON video_info(file_fingerprint)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_video_status ON video_info(file_status)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_video_scan_time ON video_info(last_scan_time)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_video_merge_time ON video_info(last_merge_time)")
+        
+        # video_master_list表索引
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_video_code ON video_master_list(video_code)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_fingerprint ON video_master_list(file_fingerprint)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_status ON video_master_list(status)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_last_updated ON video_master_list(last_updated)")
         
         # video_tags表索引
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_tags_video_id ON video_tags(video_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_tags_tag ON video_tags(tag)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_video_tags_video_id ON video_tags(video_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_video_tags_tag ON video_tags(tag)")
+        
+        self.connection.commit()
         
         # scan_history表索引
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_scan_path ON scan_history(scan_path)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_scan_time ON scan_history(scan_time)")
+        
+        # video_master_list表索引
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_code ON video_master_list(video_code)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_fingerprint ON video_master_list(file_fingerprint)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_status ON video_master_list(status)")
+        
+        # merge_history表索引
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_merge_event_type ON merge_history(event_type)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_merge_video_code ON merge_history(video_code)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_merge_time ON merge_history(merge_time)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_merge_scan_session ON merge_history(scan_session_id)")
         
         self.connection.commit()
     
@@ -136,8 +199,9 @@ class SQLiteStorage:
                 INSERT INTO video_info (
                     file_path, filename, width, height, resolution,
                     duration, duration_formatted, video_codec, audio_codec, 
-                    file_size, bit_rate, frame_rate, logical_path, created_time
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    file_size, bit_rate, frame_rate, logical_path, created_time,
+                    video_code, file_fingerprint, file_status, last_scan_time, last_merge_time
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 video_info.file_path,
                 video_info.filename,
@@ -152,7 +216,12 @@ class SQLiteStorage:
                 video_info.bit_rate,
                 video_info.frame_rate,
                 video_info.logical_path,
-                video_info.created_time.isoformat() if isinstance(video_info.created_time, datetime) else str(video_info.created_time)
+                video_info.created_time.isoformat() if isinstance(video_info.created_time, datetime) else str(video_info.created_time),
+                video_info.video_code,
+                video_info.file_fingerprint,
+                video_info.file_status,
+                datetime.now().isoformat(),  # last_scan_time
+                video_info.last_merge_time.isoformat() if video_info.last_merge_time else None
             ))
             
             video_id = cursor.lastrowid
@@ -640,7 +709,7 @@ class SQLiteStorage:
         
         for key, value in update_data.items():
             if key in ['filename', 'created_time', 'width', 'height', 'resolution', 'duration',
-                      'duration_formatted', 'video_codec', 'audio_codec', 'file_size', 'bit_rate', 'frame_rate', 'logical_path']:
+                      'duration_formatted', 'video_codec', 'audio_codec', 'file_size', 'bit_rate', 'frame_rate', 'logical_path', 'file_status']:
                 set_clauses.append(f"{key} = ?")
                 params.append(value)
         
@@ -771,6 +840,8 @@ class SQLiteStorage:
                                              tags=row.get('tags', '').split(',') if row.get('tags') else [],
                                              logical_path=row.get('logical_path', ''))
                         video_info.filename = row['filename']
+                        video_info.video_code = row.get('video_code', '')
+                        video_info.file_fingerprint = row.get('file_fingerprint', '')
                         video_info.created_time = row['created_time']
                         video_info.width = int(row['width']) if row['width'] else None
                         video_info.height = int(row['height']) if row['height'] else None
@@ -804,23 +875,23 @@ class SQLiteStorage:
         
         return [dict(row) for row in rows]
     
-    def search_videos_by_codes(self, codes: List[str]) -> List[Dict[str, Any]]:
+    def search_videos_by_video_codes(self, video_codes: List[str]) -> List[Dict[str, Any]]:
         """
         根据视频code列表查询视频信息
         
         Args:
-            codes: 视频code列表（文件名去掉扩展名）
+            video_codes: 视频code列表（文件名去掉扩展名）
             
         Returns:
-            List[Dict[str, Any]]: 匹配的视频信息列表，只包含code、file_size、logical_path字段
+            List[Dict[str, Any]]: 匹配的视频信息列表，只包含video_code、file_size、logical_path字段
         """
-        if not codes:
+        if not video_codes:
             return []
         
         cursor = self.connection.cursor()
         
-        # 构建查询条件，支持多个code的精确匹配（忽略大小写）
-        placeholders = ','.join(['?' for _ in codes])
+        # 构建查询条件，支持多个video_code的精确匹配（忽略大小写）
+        placeholders = ','.join(['?' for _ in video_codes])
         query = f"""
             SELECT 
                 CASE 
@@ -840,9 +911,9 @@ class SQLiteStorage:
             ORDER BY video_code
         """
         
-        # 将所有codes转换为小写进行匹配
-        lower_codes = [code.lower() for code in codes]
-        cursor.execute(query, lower_codes)
+        # 将所有video_codes转换为小写进行匹配
+        lower_video_codes = [video_code.lower() for video_code in video_codes]
+        cursor.execute(query, lower_video_codes)
         rows = cursor.fetchall()
         
         return [dict(row) for row in rows]
@@ -945,17 +1016,19 @@ class SQLiteStorage:
         # 基本统计
         basic_stats = self.get_statistics()
         
-        # 同名视频统计（基于文件名去掉扩展名）
+        # 同名视频统计（优先使用video_code字段，为NULL时回退到文件名去扩展名）
         cursor.execute("""
             SELECT 
                 CASE 
+                    WHEN video_code IS NOT NULL AND video_code != '' 
+                    THEN video_code
                     WHEN INSTR(filename, '.') > 0 
                     THEN SUBSTR(filename, 1, INSTR(filename, '.') - 1)
                     ELSE filename
-                END as video_code,
+                END as effective_video_code,
                 COUNT(*) as count
             FROM video_info 
-            GROUP BY video_code
+            GROUP BY effective_video_code
             HAVING COUNT(*) > 1
             ORDER BY count DESC
         """)
@@ -973,6 +1046,420 @@ class SQLiteStorage:
         
         return enhanced_stats
     
+    # ==================== Video Master List 操作方法 ====================
+    
+    def upsert_master_list_entry(self, video_code: str, file_fingerprint: str) -> int:
+        """
+        插入或更新主列表条目
+        
+        Args:
+            video_code: 视频编码
+            file_fingerprint: 文件指纹
+            
+        Returns:
+            int: 主列表条目ID
+        """
+        cursor = self.connection.cursor()
+        
+        # 检查是否已存在
+        cursor.execute("""
+            SELECT id, file_count FROM video_master_list 
+            WHERE video_code = ?
+        """, (video_code,))
+        
+        existing = cursor.fetchone()
+        
+        if existing:
+            # 更新现有条目
+            cursor.execute("""
+                UPDATE video_master_list 
+                SET file_fingerprint = ?, 
+                    file_count = file_count + 1,
+                    last_updated = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (file_fingerprint, existing['id']))
+            master_id = existing['id']
+        else:
+            # 插入新条目
+            cursor.execute("""
+                INSERT INTO video_master_list (
+                    video_code, file_fingerprint, status, file_count
+                ) VALUES (?, ?, 'active', 1)
+            """, (video_code, file_fingerprint))
+            master_id = cursor.lastrowid
+        
+        self.connection.commit()
+        return master_id
+    
+    def get_master_list_by_code(self, video_code: str) -> Optional[Dict[str, Any]]:
+        """根据video_code获取主列表条目"""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT * FROM video_master_list 
+            WHERE video_code = ? AND status = 'active'
+        """, (video_code,))
+        
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    
+    def get_all_master_list(self) -> List[Dict[str, Any]]:
+        """获取所有主列表条目"""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT * FROM video_master_list 
+            ORDER BY video_code
+        """)
+        
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    
+    def mark_master_list_as_deleted(self, video_code: str):
+        """标记主列表条目为已删除"""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            UPDATE video_master_list 
+            SET status = 'deleted', last_updated = CURRENT_TIMESTAMP
+            WHERE video_code = ?
+        """, (video_code,))
+        self.connection.commit()
+    
+    def get_master_list_statistics(self) -> Dict[str, Any]:
+        """获取主列表统计信息"""
+        cursor = self.connection.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_entries,
+                SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_entries,
+                SUM(CASE WHEN status = 'deleted' THEN 1 ELSE 0 END) as deleted_entries,
+                SUM(CASE WHEN status = 'duplicate' THEN 1 ELSE 0 END) as duplicate_entries,
+                SUM(file_count) as total_file_count
+            FROM video_master_list
+        """)
+        
+        result = cursor.fetchone()
+        return dict(result) if result else {}
+    
+    def recalculate_master_list_file_counts(self):
+        """重新计算主列表的文件计数，排除REPLACED状态的文件"""
+        cursor = self.connection.cursor()
+        
+        # 更新所有video_code的file_count，基于video_info表中非REPLACED状态的记录
+        cursor.execute("""
+            UPDATE video_master_list 
+            SET file_count = (
+                SELECT COUNT(*) 
+                FROM video_info 
+                WHERE video_info.video_code = video_master_list.video_code 
+                AND video_info.file_status != 'replaced'
+            ),
+            last_updated = CURRENT_TIMESTAMP
+        """)
+        
+        self.connection.commit()
+    
+    def update_master_list_file_count(self, video_code: str):
+        """更新特定video_code的文件计数，排除REPLACED状态的文件"""
+        cursor = self.connection.cursor()
+        
+        cursor.execute("""
+            UPDATE video_master_list 
+            SET file_count = (
+                SELECT COUNT(*) 
+                FROM video_info 
+                WHERE video_code = ? 
+                AND file_status != 'replaced'
+            ),
+            last_updated = CURRENT_TIMESTAMP
+            WHERE video_code = ?
+        """, (video_code, video_code))
+        
+        self.connection.commit()
+    
+    # ==================== Merge History 操作方法 ====================
+    
+    def add_merge_event(self, event_type: str, video_code: Optional[str] = None,
+                       old_path: Optional[str] = None, new_path: Optional[str] = None,
+                       details: Optional[str] = None, scan_session_id: Optional[str] = None) -> int:
+        """
+        添加合并事件记录
+        
+        Args:
+            event_type: 事件类型 (insert_new, update_path, mark_missing)
+            video_code: 视频编码
+            old_path: 旧文件路径
+            new_path: 新文件路径
+            details: 详细信息
+            scan_session_id: 扫描会话ID
+            
+        Returns:
+            int: 合并历史记录ID
+        """
+        cursor = self.connection.cursor()
+        
+        cursor.execute("""
+            INSERT INTO merge_history (
+                event_type, video_code, old_path, new_path, details, scan_session_id
+            ) VALUES (?, ?, ?, ?, ?, ?)
+        """, (event_type, video_code, old_path, new_path, details, scan_session_id))
+        
+        history_id = cursor.lastrowid
+        self.connection.commit()
+        return history_id
+    
+    def get_merge_history_by_video_code(self, video_code: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """根据video_code获取合并历史"""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT * FROM merge_history 
+            WHERE video_code = ?
+            ORDER BY merge_time DESC
+            LIMIT ?
+        """, (video_code, limit))
+        
+        return [dict(row) for row in cursor.fetchall()]
+    
+    def get_merge_history_by_scan_session(self, scan_session_id: str) -> List[Dict[str, Any]]:
+        """根据scan_session_id获取合并历史"""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT * FROM merge_history 
+            WHERE scan_session_id = ?
+            ORDER BY merge_time ASC
+        """, (scan_session_id,))
+        
+        return [dict(row) for row in cursor.fetchall()]
+    
+    def get_merge_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """获取所有合并历史记录"""
+        cursor = self.connection.cursor()
+        query = "SELECT * FROM merge_history ORDER BY merge_time DESC"
+        if limit:
+            query += f" LIMIT {limit}"
+        cursor.execute(query)
+        
+        return [dict(row) for row in cursor.fetchall()]
+    
+    def get_merge_statistics(self) -> Dict[str, Any]:
+        """获取合并统计信息"""
+        cursor = self.connection.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                event_type,
+                COUNT(*) as count
+            FROM merge_history
+            GROUP BY event_type
+        """)
+        
+        event_stats = {row['event_type']: row['count'] for row in cursor.fetchall()}
+        
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_events,
+                COUNT(DISTINCT video_code) as unique_video_codes,
+                COUNT(DISTINCT scan_session_id) as unique_scan_sessions
+            FROM merge_history
+        """)
+        
+        general_stats = dict(cursor.fetchone())
+        general_stats['event_breakdown'] = event_stats
+        
+        return general_stats
+    
+    def cleanup_old_merge_history(self, days_to_keep: int = 90):
+        """清理旧的合并历史记录"""
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            DELETE FROM merge_history 
+            WHERE merge_time < datetime('now', '-{} days')
+        """.format(days_to_keep))
+        
+        deleted_count = cursor.rowcount
+        self.connection.commit()
+        return deleted_count
+    
+    def validate_database_structure(self) -> Dict[str, bool]:
+        """验证数据库表结构是否完整
+        
+        Returns:
+            Dict[str, bool]: 每个表的验证结果
+        """
+        cursor = self.connection.cursor()
+        
+        # 期望的表名列表
+        expected_tables = [
+            'video_info',
+            'video_tags', 
+            'scan_history',
+            'video_master_list',
+            'merge_history'
+        ]
+        
+        validation_results = {}
+        
+        for table_name in expected_tables:
+            cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name=?
+            """, (table_name,))
+            
+            result = cursor.fetchone()
+            validation_results[table_name] = result is not None
+        
+        return validation_results
+    
+    def get_table_info(self) -> Dict[str, Dict[str, Any]]:
+        """获取所有表的详细信息
+        
+        Returns:
+            Dict[str, Dict[str, Any]]: 每个表的列信息
+        """
+        cursor = self.connection.cursor()
+        
+        # 获取所有表名
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name NOT LIKE 'sqlite_%'
+            ORDER BY name
+        """)
+        
+        tables = [row[0] for row in cursor.fetchall()]
+        table_info = {}
+        
+        for table_name in tables:
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            columns = cursor.fetchall()
+            
+            table_info[table_name] = {
+                'columns': [
+                    {
+                        'name': col[1],
+                        'type': col[2],
+                        'not_null': bool(col[3]),
+                        'default_value': col[4],
+                        'primary_key': bool(col[5])
+                    }
+                    for col in columns
+                ],
+                'column_count': len(columns)
+            }
+        
+        return table_info
+
+    def get_video_tags(self, video_id: int) -> List[str]:
+        """
+        获取视频的标签列表
+        
+        Args:
+            video_id: 视频ID
+            
+        Returns:
+            List[str]: 标签列表
+        """
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT tag FROM video_tags WHERE video_id = ?", (video_id,))
+        rows = cursor.fetchall()
+        return [row['tag'] for row in rows]
+
+    def load_videos_from_csv(self, csv_path: str) -> List[VideoInfo]:
+        """
+        从CSV文件加载视频信息
+        
+        Args:
+            csv_path: CSV文件路径
+            
+        Returns:
+            List[VideoInfo]: 视频信息列表
+        """
+        videos = []
+        
+        if not os.path.exists(csv_path):
+            return videos
+        
+        try:
+            with open(csv_path, 'r', encoding='utf-8-sig') as csvfile:
+                reader = csv.DictReader(csvfile)
+                for row in reader:
+                    try:
+                        video_info = VideoInfo(file_path=row['file_path'], 
+                                             tags=row.get('tags', '').split(',') if row.get('tags') else [],
+                                             logical_path=row.get('logical_path', ''))
+                        video_info.filename = row['filename']
+                        video_info.video_code = row.get('video_code', '')
+                        video_info.file_fingerprint = row.get('file_fingerprint', '')
+                        video_info.created_time = row['created_time']
+                        video_info.width = int(row['width']) if row['width'] else None
+                        video_info.height = int(row['height']) if row['height'] else None
+                        video_info.duration = float(row['duration']) if row['duration'] else None
+                        video_info.video_codec = row['video_codec'] if row['video_codec'] else None
+                        video_info.audio_codec = row['audio_codec'] if row['audio_codec'] else None
+                        video_info.file_size = int(row['file_size']) if row['file_size'] else None
+                        video_info.bit_rate = int(row['bit_rate']) if row['bit_rate'] else None
+                        video_info.frame_rate = float(row['frame_rate']) if row.get('frame_rate') else None
+                        
+                        videos.append(video_info)
+                    except (ValueError, KeyError):
+                        continue
+        except Exception:
+            pass
+        
+        return videos
+    
+    def get_all_video_infos(self) -> List[VideoInfo]:
+        """
+        获取所有视频信息对象
+        
+        Returns:
+            List[VideoInfo]: 所有视频信息对象列表
+        """
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT * FROM video_info ORDER BY filename")
+        rows = cursor.fetchall()
+        
+        videos = []
+        for row in rows:
+            video_info = VideoInfo(file_path=row['file_path'])
+            video_info.id = row['id']
+            video_info.filename = row['filename']
+            video_info.created_time = row['created_time']
+            video_info.width = row['width']
+            video_info.height = row['height']
+            video_info.duration = row['duration']
+            video_info.video_codec = row['video_codec']
+            video_info.audio_codec = row['audio_codec']
+            video_info.file_size = row['file_size']
+            video_info.bit_rate = row['bit_rate']
+            video_info.frame_rate = row['frame_rate']
+            video_info.file_fingerprint = row['file_fingerprint']
+            video_info.video_code = row['video_code']
+            video_info.file_status = row['file_status']
+            video_info.last_scan_time = row['last_scan_time']
+            video_info.logical_path = row['logical_path']
+            
+            # 加载标签
+            video_info.tags = self.get_video_tags(video_info.id)
+            
+            videos.append(video_info)
+        
+        return videos
+    
+    def update_csv_merge_history_processed_count(self, history_id: int, processed_count: int):
+        """
+        更新CSV合并历史记录的处理数量
+        
+        Args:
+            history_id: 历史记录ID
+            processed_count: 处理数量
+        """
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            UPDATE scan_history 
+            SET files_processed = ? 
+            WHERE id = ?
+        """, (processed_count, history_id))
+        self.connection.commit()
+
     def close(self):
         """关闭数据库连接"""
         if self.connection:

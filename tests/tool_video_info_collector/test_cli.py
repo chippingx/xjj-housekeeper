@@ -165,9 +165,10 @@ class TestCLI(unittest.TestCase):
             f.write("file_path,filename\n")
             f.write(f"{self.test_video_path},test_video.mp4\n")
         
-        with patch('tools.video_info_collector.cli.SQLiteStorage') as mock_storage:
+        with patch('tools.video_info_collector.cli.SQLiteStorage') as mock_storage, \
+             patch('tools.video_info_collector.smart_merge_manager.SmartMergeManager') as mock_merge_manager:
+            
             mock_storage_instance = MagicMock()
-            mock_storage_instance.import_from_csv.return_value = 1
             mock_storage_instance.check_csv_already_merged.return_value = False  # 假设CSV文件未被合并过
             mock_storage_instance.get_csv_fingerprint.return_value = "test_fingerprint"
             mock_storage_instance.extract_scan_info_from_csv_filename.return_value = {
@@ -175,14 +176,26 @@ class TestCLI(unittest.TestCase):
                 'timestamp': '20240101_120000'
             }
             mock_storage_instance.add_csv_merge_history.return_value = 1
+            mock_storage_instance.load_videos_from_csv.return_value = [MagicMock()]  # 模拟加载的视频
+            mock_storage_instance.get_all_video_infos.return_value = []  # 模拟现有视频
             mock_storage.return_value = mock_storage_instance
+            
+            # 设置SmartMergeManager mock
+            mock_merge_manager_instance = MagicMock()
+            mock_merge_manager_instance.analyze_merge_candidates.return_value = {}
+            mock_merge_manager_instance.execute_merge_plan.return_value = {
+                'inserted': 1, 'updated': 0, 'skipped': 0
+            }
+            mock_merge_manager.return_value = mock_merge_manager_instance
             
             # 运行CLI - 新的接口使用--merge参数
             result = cli_main(['--merge', csv_path, '--database', db_path])
             
             # 验证结果
             self.assertEqual(result, 0)
-            mock_storage_instance.import_from_csv.assert_called_once_with(csv_path)
+            mock_storage_instance.load_videos_from_csv.assert_called_once_with(csv_path)
+            mock_merge_manager_instance.analyze_merge_candidates.assert_called_once()
+            mock_merge_manager_instance.execute_merge_plan.assert_called_once()
     
     def test_cli_dry_run(self):
         """测试dry-run模式"""
@@ -484,7 +497,7 @@ class TestCLI(unittest.TestCase):
                 import shutil
                 shutil.rmtree("/tmp/test_中文目录", ignore_errors=True)
 
-    def test_cli_search_code_single(self):
+    def test_cli_search_video_code_single(self):
         """测试单个视频code查询"""
         db_path = os.path.join(self.temp_dir, "test.db")
         
@@ -494,7 +507,7 @@ class TestCLI(unittest.TestCase):
         
         with patch('tools.video_info_collector.cli.SQLiteStorage') as mock_storage:
             mock_storage_instance = MagicMock()
-            mock_storage_instance.search_videos_by_codes.return_value = [
+            mock_storage_instance.search_videos_by_video_codes.return_value = [
                 {
                     'video_code': 'ABC-123',
                     'file_size': 1024000000,
@@ -503,14 +516,14 @@ class TestCLI(unittest.TestCase):
             ]
             mock_storage.return_value = mock_storage_instance
             
-            # 运行CLI - 使用--search-code参数
-            result = cli_main(['--search-code', 'ABC-123', '--database', db_path])
+            # 运行CLI - 使用--search-video-code参数
+            result = cli_main(['--search-video-code', 'ABC-123', '--database', db_path])
             
             # 验证结果
             self.assertEqual(result, 0)
-            mock_storage_instance.search_videos_by_codes.assert_called_once_with(['ABC-123'])
+            mock_storage_instance.search_videos_by_video_codes.assert_called_once_with(['ABC-123'])
 
-    def test_cli_search_code_multiple_comma(self):
+    def test_cli_search_video_code_multiple_comma(self):
         """测试多个视频code查询（逗号分隔）"""
         db_path = os.path.join(self.temp_dir, "test.db")
         
@@ -520,7 +533,7 @@ class TestCLI(unittest.TestCase):
         
         with patch('tools.video_info_collector.cli.SQLiteStorage') as mock_storage:
             mock_storage_instance = MagicMock()
-            mock_storage_instance.search_videos_by_codes.return_value = [
+            mock_storage_instance.search_videos_by_video_codes.return_value = [
                 {
                     'video_code': 'ABC-123',
                     'file_size': 1024000000,
@@ -535,13 +548,13 @@ class TestCLI(unittest.TestCase):
             mock_storage.return_value = mock_storage_instance
             
             # 运行CLI - 使用逗号分隔的多个code
-            result = cli_main(['--search-code', 'ABC-123,DEF-456', '--database', db_path])
+            result = cli_main(['--search-video-code', 'ABC-123,DEF-456', '--database', db_path])
             
             # 验证结果
             self.assertEqual(result, 0)
-            mock_storage_instance.search_videos_by_codes.assert_called_once_with(['ABC-123', 'DEF-456'])
+            mock_storage_instance.search_videos_by_video_codes.assert_called_once_with(['ABC-123', 'DEF-456'])
 
-    def test_cli_search_code_multiple_space(self):
+    def test_cli_search_video_code_multiple_space(self):
         """测试多个视频code查询（空格分隔）"""
         db_path = os.path.join(self.temp_dir, "test.db")
         
@@ -551,17 +564,20 @@ class TestCLI(unittest.TestCase):
         
         with patch('tools.video_info_collector.cli.SQLiteStorage') as mock_storage:
             mock_storage_instance = MagicMock()
-            mock_storage_instance.search_videos_by_codes.return_value = []
+            mock_storage_instance.search_videos_by_video_codes.return_value = [
+                {'video_code': 'ABC-123', 'file_size': '1.5G', 'logical_path': '/movies/action'},
+                {'video_code': 'DEF-456', 'file_size': '2.1G', 'logical_path': '/movies/comedy'}
+            ]
             mock_storage.return_value = mock_storage_instance
             
             # 运行CLI - 使用空格分隔的多个code
-            result = cli_main(['--search-code', 'ABC-123 DEF-456', '--database', db_path])
+            result = cli_main(['--search-video-code', 'ABC-123 DEF-456', '--database', db_path])
             
             # 验证结果
             self.assertEqual(result, 0)
-            mock_storage_instance.search_videos_by_codes.assert_called_once_with(['ABC-123', 'DEF-456'])
+            mock_storage_instance.search_videos_by_video_codes.assert_called_once_with(['ABC-123', 'DEF-456'])
 
-    def test_cli_search_code_with_spaces(self):
+    def test_cli_search_video_code_with_spaces(self):
         """测试视频code查询去除前后空格"""
         db_path = os.path.join(self.temp_dir, "test.db")
         
@@ -571,17 +587,20 @@ class TestCLI(unittest.TestCase):
         
         with patch('tools.video_info_collector.cli.SQLiteStorage') as mock_storage:
             mock_storage_instance = MagicMock()
-            mock_storage_instance.search_videos_by_codes.return_value = []
+            mock_storage_instance.search_videos_by_video_codes.return_value = [
+                {'video_code': 'ABC-123', 'file_size': '1.5G', 'logical_path': '/movies/action'},
+                {'video_code': 'DEF-456', 'file_size': '2.1G', 'logical_path': '/movies/comedy'}
+            ]
             mock_storage.return_value = mock_storage_instance
             
             # 运行CLI - 包含前后空格的code
-            result = cli_main(['--search-code', '  ABC-123  ,  DEF-456  ', '--database', db_path])
+            result = cli_main(['--search-video-code', '  ABC-123  ,  DEF-456  ', '--database', db_path])
             
             # 验证结果
             self.assertEqual(result, 0)
-            mock_storage_instance.search_videos_by_codes.assert_called_once_with(['ABC-123', 'DEF-456'])
+            mock_storage_instance.search_videos_by_video_codes.assert_called_once_with(['ABC-123', 'DEF-456'])
 
-    def test_cli_search_code_no_results(self):
+    def test_cli_search_video_code_no_results(self):
         """测试视频code查询无结果"""
         db_path = os.path.join(self.temp_dir, "test.db")
         
@@ -591,24 +610,24 @@ class TestCLI(unittest.TestCase):
         
         with patch('tools.video_info_collector.cli.SQLiteStorage') as mock_storage:
             mock_storage_instance = MagicMock()
-            mock_storage_instance.search_videos_by_codes.return_value = []
+            mock_storage_instance.search_videos_by_video_codes.return_value = []
             mock_storage.return_value = mock_storage_instance
             
             # 运行CLI - 查询不存在的code
-            result = cli_main(['--search-code', 'NONEXISTENT-123', '--database', db_path])
+            result = cli_main(['--search-video-code', 'NONEXISTENT-123', '--database', db_path])
             
             # 验证结果
             self.assertEqual(result, 0)
-            mock_storage_instance.search_videos_by_codes.assert_called_once_with(['NONEXISTENT-123'])
+            mock_storage_instance.search_videos_by_video_codes.assert_called_once_with(['NONEXISTENT-123'])
 
-    def test_cli_search_code_nonexistent_database(self):
+    def test_cli_search_video_code_nonexistent_database(self):
         """测试视频code查询数据库不存在"""
-        nonexistent_db = os.path.join(self.temp_dir, "nonexistent.db")
+        nonexistent_db = "/path/to/nonexistent.db"
         
-        # 运行CLI - 数据库文件不存在
-        result = cli_main(['--search-code', 'ABC-123', '--database', nonexistent_db])
+        # 运行CLI - 数据库不存在
+        result = cli_main(['--search-video-code', 'ABC-123', '--database', nonexistent_db])
         
-        # 验证结果 - 应该返回错误代码
+        # 应该返回错误码
         self.assertNotEqual(result, 0)
 
 

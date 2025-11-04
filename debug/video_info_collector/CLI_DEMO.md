@@ -87,19 +87,19 @@ python -m tools.video_info_collector --merge my_videos.csv --database projects/c
 
 ```bash
 # 通过视频code查询单个视频（文件名去掉后缀）
-python -m tools.video_info_collector --search-code "ABC-123"
+python -m tools.video_info_collector --search-video-code "ABC-123"
 
 # 查询多个视频code（逗号分隔）
-python -m tools.video_info_collector --search-code "ABC-123,DEF-456,GHI-789"
+python -m tools.video_info_collector --search-video-code "ABC-123,DEF-456,GHI-789"
 
 # 查询多个视频code（空格分隔）
-python -m tools.video_info_collector --search-code "ABC-123 DEF-456 GHI-789"
+python -m tools.video_info_collector --search-video-code "ABC-123 DEF-456 GHI-789"
 
 # 从自定义数据库查询
-python -m tools.video_info_collector --search-code "ABC-123" --database projects/movies.db
+python -m tools.video_info_collector --search-video-code "ABC-123" --database projects/movies.db
 
 # 大小写不敏感查询
-python -m tools.video_info_collector --search-code "abc-123 DEF-456"
+python -m tools.video_info_collector --search-video-code "abc-123 DEF-456"
 ```
 
 **查询功能特性：**

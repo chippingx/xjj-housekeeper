@@ -84,16 +84,16 @@ python -m tools.video_info_collector --export output/video_info_collector/databa
 ### 视频查询功能
 ```bash
 # 通过视频code查询（文件名去掉后缀）
-python -m tools.video_info_collector --search-code "ABC-123"
+python -m tools.video_info_collector --search-video-code "ABC-123"
 
 # 查询多个视频code（逗号分隔）
-python -m tools.video_info_collector --search-code "ABC-123,DEF-456"
+python -m tools.video_info_collector --search-video-code "ABC-123,DEF-456"
 
 # 查询多个视频code（空格分隔）
-python -m tools.video_info_collector --search-code "ABC-123 DEF-456"
+python -m tools.video_info_collector --search-video-code "ABC-123 DEF-456"
 
-# 指定数据库文件进行查询
-python -m tools.video_info_collector --search-code "ABC-123" --database custom_database.db
+# 指定数据库文件
+python -m tools.video_info_collector --search-video-code "ABC-123" --database custom_database.db
 ```
 
 **查询功能特性**:
@@ -150,7 +150,7 @@ python -m tools.video_info_collector stats --type basic --database custom_databa
 | `--export` | 从SQLite导出数据 | 无 |
 | `--format` | 导出格式：csv/json | `csv` |
 | `--output` | 导出文件路径 | 无 |
-| `--search-code` | 通过视频code查询（支持多个，逗号或空格分隔） | 无 |
+| `--search-video-code` | 通过视频code查询（支持多个，逗号或空格分隔） | 无 |
 | `stats` | 统计子命令 | 无 |
 | `--type` | 统计类型：basic/tags/resolution/duration/enhanced | `basic` |
 

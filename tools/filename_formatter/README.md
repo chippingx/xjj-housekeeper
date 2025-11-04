@@ -43,7 +43,7 @@ settings:
   min_file_size_bytes: 104857600  # 100MB
 
 rename_rules:
-  - pattern: "kfa55.com@"
+  - pattern: "site1234.com@"
     replace: ""
   - pattern: "ch.mp4"
     replace: ".mp4"

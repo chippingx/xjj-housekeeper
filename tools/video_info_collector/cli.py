@@ -137,6 +137,20 @@ def get_default_paths():
 
 def format_file_size(size_bytes):
     """格式化文件大小"""
+    # 如果已经是格式化的字符串，直接返回
+    if isinstance(size_bytes, str):
+        return size_bytes
+    
+    # 如果是None或0，返回N/A
+    if not size_bytes:
+        return 'N/A'
+    
+    # 转换为整数（防止浮点数输入）
+    try:
+        size_bytes = int(size_bytes)
+    except (ValueError, TypeError):
+        return 'N/A'
+    
     if size_bytes < 1024:
         return f"{size_bytes}B"
     elif size_bytes < 1024 * 1024:
@@ -545,23 +559,71 @@ def merge_command(args):
         print(f"CSV文件包含 {total_records} 条记录")
         check_interruption()
         
-        # 执行合并操作
-        set_current_operation("导入CSV数据")
-        print("开始合并数据...")
-        success_count = storage.import_from_csv(args.csv_file)
-        check_interruption()
+        # 执行智能合并操作
+        set_current_operation("智能合并CSV数据")
+        print("开始智能合并数据...")
         
-        # 记录合并历史
+        # 导入SmartMergeManager
+        from .smart_merge_manager import SmartMergeManager
+        
+        # 从CSV文件加载视频信息
+        new_videos = storage.load_videos_from_csv(args.csv_file)
+        if not new_videos:
+            print("❌ CSV文件中没有有效的视频数据")
+            storage.close()
+            return 1
+        
+        # 获取现有视频数据
+        existing_videos = storage.get_all_video_infos()
+        
+        # 创建智能合并管理器
+        merge_manager = SmartMergeManager(storage)
+        
+        # 分析合并候选项
+        merge_results = merge_manager.analyze_merge_candidates(new_videos, existing_videos)
+        
+        # 记录合并历史（创建scan记录）
         set_current_operation("记录合并历史")
         history_id = storage.add_csv_merge_history(
             csv_file_path=csv_file,
             files_found=total_records,
-            files_processed=success_count,
+            files_processed=0,  # 将在执行后更新
             csv_fingerprint=csv_fingerprint,
             original_scan_path=scan_info['original_scan_path'],
             tags=None,  # CSV合并操作通常不涉及特定标签
             logical_path=scan_info['original_scan_path']
         )
+        
+        # 执行合并计划
+        set_current_operation("执行合并计划")
+        merge_stats = merge_manager.execute_merge_plan(merge_results, history_id)
+        success_count = merge_stats['inserted'] + merge_stats['updated']
+        
+        # 为跳过的重复视频记录merge_history事件
+        total_actions = sum(len(actions) for actions in merge_results.values())
+        skipped_count = len(new_videos) - total_actions
+        
+        if skipped_count > 0:
+            # 为跳过的视频记录merge事件
+            processed_videos = set()
+            for action_list in merge_results.values():
+                for action in action_list:
+                    processed_videos.add(action.video_info.file_path)
+            
+            for new_video in new_videos:
+                if new_video.file_path not in processed_videos:
+                    # 这是一个被跳过的重复视频，记录merge事件
+                    storage.add_merge_event(
+                        'skip_duplicate',
+                        None, 
+                        new_video.file_path,
+                        history_id
+                    )
+        
+        # 更新合并历史记录的处理数量
+        storage.update_csv_merge_history_processed_count(history_id, success_count)
+        
+        check_interruption()
         
         storage.close()
         
@@ -703,7 +765,7 @@ def export_simple_command(args):
         return 1
 
 
-def search_code_command(args):
+def search_video_code_command(args):
     """视频code查询命令"""
     global _error_handler
     
@@ -713,23 +775,23 @@ def search_code_command(args):
     
     set_current_operation("视频code查询")
     
-    # 解析输入的codes，支持空格和逗号分隔
-    codes_input = args.search_codes.strip()
-    if not codes_input:
+    # 解析输入的video_codes，支持空格和逗号分隔
+    video_codes_input = args.search_video_codes.strip()
+    if not video_codes_input:
         print("❌ 错误: 请提供要查询的视频code")
         return 1
     
-    # 分割codes，支持逗号和空格分隔
+    # 分割video_codes，支持逗号和空格分隔
     import re
-    codes = re.split(r'[,\s]+', codes_input)
+    video_codes = re.split(r'[,\s]+', video_codes_input)
     # 去除空字符串和前后空格
-    codes = [code.strip() for code in codes if code.strip()]
+    video_codes = [video_code.strip() for video_code in video_codes if video_code.strip()]
     
-    if not codes:
+    if not video_codes:
         print("❌ 错误: 没有找到有效的视频code")
         return 1
     
-    print(f"🔍 正在查询视频code: {', '.join(codes)}")
+    print(f"🔍 正在查询视频code: {', '.join(video_codes)}")
     
     try:
         # 连接数据库
@@ -741,11 +803,11 @@ def search_code_command(args):
         storage = SQLiteStorage(args.database)
         
         # 查询视频信息
-        results = storage.search_videos_by_codes(codes)
+        results = storage.search_videos_by_video_codes(video_codes)
         
         if not results:
             print("❌ 没有找到匹配的视频")
-            print(f"🔍 查询的codes: {', '.join(codes)}")
+            print(f"🔍 查询的video_codes: {', '.join(video_codes)}")
             storage.close()
             return 0
         
@@ -823,16 +885,33 @@ def init_db_command(args):
         storage = SQLiteStorage(db_path)
         
         # 验证数据库创建成功
+        validation_results = storage.validate_database_structure()
         total_count = storage.get_total_count()
+        
+        # 检查是否所有表都创建成功
+        failed_tables = [table for table, created in validation_results.items() if not created]
+        if failed_tables:
+            storage.close()
+            print(f"❌ 数据库初始化失败！以下表未能创建: {', '.join(failed_tables)}")
+            return 1
+        
         storage.close()
         check_interruption()
         
         print(f"\n✅ 数据库初始化完成!")
         print(f"📁 数据库文件: {db_path}")
         print(f"📋 已创建的表:")
-        print(f"  • video_info - 视频元数据表")
-        print(f"  • scan_history - 扫描历史表")
-        print(f"  • csv_merge_history - CSV合并历史表")
+        for table_name, created in validation_results.items():
+            status = "✅" if created else "❌"
+            table_descriptions = {
+                'video_info': '视频元数据表',
+                'video_tags': '视频标签表',
+                'scan_history': '扫描历史表',
+                'video_master_list': '视频主列表表',
+                'merge_history': '合并历史表'
+            }
+            description = table_descriptions.get(table_name, table_name)
+            print(f"  {status} {table_name} - {description}")
         print(f"📊 当前记录数: {total_count}")
         
         return 0
@@ -981,9 +1060,9 @@ def create_parser():
   python -m tools.video_info_collector --export-simple output/video_info_collector/database/video_database.db --output simple_export.txt
   
   # 根据视频code查询
-  python -m tools.video_info_collector --search-code "ABC-123"
-  python -m tools.video_info_collector --search-code "ABC-123,DEF-456"
-  python -m tools.video_info_collector --search-code "ABC-123 DEF-456"
+  python -m tools.video_info_collector --search-video-code "ABC-123"
+  python -m tools.video_info_collector --search-video-code "ABC-123,DEF-456"
+  python -m tools.video_info_collector --search-video-code "ABC-123 DEF-456"
   
   # 数据统计
   python -m tools.video_info_collector --stats  # 显示基本统计信息
@@ -1025,8 +1104,8 @@ def create_parser():
                       help='初始化/重置数据库（清空所有数据）')
     
     # 视频code查询操作
-    group.add_argument('--search-code', dest='search_codes', metavar='CODES',
-                      help='根据视频code查询（支持多个code，用空格或逗号分隔）')
+    group.add_argument('--search-video-code', dest='search_video_codes', metavar='VIDEO_CODES',
+                      help='根据视频code查询（支持多个video_code，用空格或逗号分隔）')
     
     # 数据统计操作
     group.add_argument('--stats', action='store_true',
@@ -1107,9 +1186,9 @@ def cli_main(argv=None):
     elif args.init_db:
         # 数据库初始化操作
         return init_db_command(args)
-    elif args.search_codes:
+    elif args.search_video_codes:
         # 视频code查询操作
-        return search_code_command(args)
+        return search_video_code_command(args)
     elif args.stats:
         # 数据统计操作
         return stats_command(args)

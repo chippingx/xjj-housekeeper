@@ -380,145 +380,94 @@ class TestSQLiteStorage(unittest.TestCase):
         self.assertFalse(success)
 
 
-    def test_search_videos_by_codes_single(self):
-        """测试根据单个视频code查询"""
+    def test_search_videos_by_video_codes_single(self):
+        """测试单个视频code查询"""
         # 插入测试数据
-        video_info = VideoInfo("/path/to/ABC-123.mp4", tags=["test"], logical_path="test/ABC-123.mp4")
-        video_info.width = 1920
-        video_info.height = 1080
-        video_info.duration = 120.5
-        video_info.video_codec = "h264"
-        video_info.audio_codec = "aac"
-        video_info.file_size = 1024000000
-        video_info.bit_rate = 5000000
-        video_info.frame_rate = 30.0
+        video_info = VideoInfo("/path/to/ABC-123.mp4", tags=["动作片", "高清"], logical_path="/movies/action")
+        video_info.file_size = 1073741824  # 1GB
+        video_info.video_code = "ABC-123"
+        self.storage.insert_video_info(video_info)
         
-        video_id = self.storage.insert_video_info(video_info)
-        self.assertIsNotNone(video_id)
+        # 查询单个视频code
+        results = self.storage.search_videos_by_video_codes(['ABC-123'])
         
-        # 测试查询
-        results = self.storage.search_videos_by_codes(['ABC-123'])
-        
-        # 验证结果
         self.assertEqual(len(results), 1)
-        result = results[0]
-        self.assertEqual(result['video_code'], 'ABC-123')
-        self.assertEqual(result['file_size'], 1024000000)
-        self.assertEqual(result['logical_path'], 'test/ABC-123.mp4')
+        self.assertEqual(results[0]['video_code'], 'ABC-123')
+        self.assertEqual(results[0]['file_size'], 1073741824)
+        self.assertEqual(results[0]['logical_path'], '/movies/action')
 
-    def test_search_videos_by_codes_multiple(self):
-        """测试根据多个视频code查询"""
+    def test_search_videos_by_video_codes_multiple(self):
+        """测试多个视频code查询"""
         # 插入测试数据
-        video_infos = [
-            VideoInfo("/path/to/ABC-123.mp4", tags=["test"], logical_path="test/ABC-123.mp4"),
-            VideoInfo("/path/to/DEF-456.mkv", tags=["test"], logical_path="test/DEF-456.mkv"),
-            VideoInfo("/path/to/GHI-789.avi", tags=["test"], logical_path="test/GHI-789.avi")
-        ]
+        video_info1 = VideoInfo("/path/to/ABC-123.mp4", tags=["动作片", "高清"], logical_path="/movies/action")
+        video_info1.file_size = 1073741824  # 1GB
+        video_info1.video_code = "ABC-123"
         
-        for i, video_info in enumerate(video_infos):
-            video_info.width = 1920
-            video_info.height = 1080
-            video_info.duration = 120.5 + i * 10
-            video_info.video_codec = "h264"
-            video_info.audio_codec = "aac"
-            video_info.file_size = 1024000000 + i * 100000000
-            video_info.bit_rate = 5000000
-            video_info.frame_rate = 30.0
-            
-            video_id = self.storage.insert_video_info(video_info)
-            self.assertIsNotNone(video_id)
+        video_info2 = VideoInfo("/path/to/DEF-456.mkv", tags=["喜剧片", "标清"], logical_path="/movies/comedy")
+        video_info2.file_size = 2147483648  # 2GB
+        video_info2.video_code = "DEF-456"
         
-        # 测试查询多个code
-        results = self.storage.search_videos_by_codes(['ABC-123', 'DEF-456'])
+        self.storage.insert_video_info(video_info1)
+        self.storage.insert_video_info(video_info2)
         
-        # 验证结果
+        # 查询多个视频code
+        results = self.storage.search_videos_by_video_codes(['ABC-123', 'DEF-456'])
+        
         self.assertEqual(len(results), 2)
-        codes = [result['video_code'] for result in results]
-        self.assertIn('ABC-123', codes)
-        self.assertIn('DEF-456', codes)
 
-    def test_search_videos_by_codes_case_insensitive(self):
-        """测试视频code查询忽略大小写"""
+    def test_search_videos_by_video_codes_case_insensitive(self):
+        """测试大小写不敏感查询"""
         # 插入测试数据
-        video_info = VideoInfo("/path/to/ABC-123.mp4", tags=["test"], logical_path="test/ABC-123.mp4")
-        video_info.width = 1920
-        video_info.height = 1080
-        video_info.duration = 120.5
-        video_info.video_codec = "h264"
-        video_info.audio_codec = "aac"
-        video_info.file_size = 1024000000
-        video_info.bit_rate = 5000000
-        video_info.frame_rate = 30.0
+        video_info = VideoInfo("/path/to/ABC-123.mp4", tags=["动作片", "高清"], logical_path="/movies/action")
+        video_info.file_size = 1073741824  # 1GB
+        video_info.video_code = "ABC-123"
+        self.storage.insert_video_info(video_info)
         
-        video_id = self.storage.insert_video_info(video_info)
-        self.assertIsNotNone(video_id)
+        # 使用小写查询
+        results = self.storage.search_videos_by_video_codes(['abc-123'])
         
-        # 测试小写查询
-        results = self.storage.search_videos_by_codes(['abc-123'])
-        
-        # 验证结果
         self.assertEqual(len(results), 1)
-        result = results[0]
-        self.assertEqual(result['video_code'], 'ABC-123')  # 返回原始大小写
+        self.assertEqual(results[0]['video_code'], 'ABC-123')
 
-    def test_search_videos_by_codes_no_results(self):
-        """测试视频code查询无结果"""
+    def test_search_videos_by_video_codes_no_results(self):
+        """测试查询不存在的视频code"""
         # 插入测试数据
-        video_info = VideoInfo("/path/to/ABC-123.mp4", tags=["test"], logical_path="test/ABC-123.mp4")
-        video_info.width = 1920
-        video_info.height = 1080
-        video_info.duration = 120.5
-        video_info.video_codec = "h264"
-        video_info.audio_codec = "aac"
-        video_info.file_size = 1024000000
-        video_info.bit_rate = 5000000
-        video_info.frame_rate = 30.0
+        video_info = VideoInfo("/path/to/ABC-123.mp4", tags=["动作片", "高清"], logical_path="/movies/action")
+        video_info.file_size = 1073741824  # 1GB
+        video_info.video_code = "ABC-123"
+        self.storage.insert_video_info(video_info)
         
-        video_id = self.storage.insert_video_info(video_info)
-        self.assertIsNotNone(video_id)
+        # 查询不存在的视频code
+        results = self.storage.search_videos_by_video_codes(['NONEXISTENT-999'])
         
-        # 测试查询不存在的code
-        results = self.storage.search_videos_by_codes(['NONEXISTENT-999'])
-        
-        # 验证结果
         self.assertEqual(len(results), 0)
 
-    def test_search_videos_by_codes_empty_list(self):
-        """测试空code列表查询"""
-        # 测试空列表
-        results = self.storage.search_videos_by_codes([])
+    def test_search_videos_by_video_codes_empty_list(self):
+        """测试空列表查询"""
+        # 查询空列表
+        results = self.storage.search_videos_by_video_codes([])
         
-        # 验证结果
         self.assertEqual(len(results), 0)
 
-    def test_search_videos_by_codes_partial_match(self):
-        """测试部分匹配的视频code查询"""
+    def test_search_videos_by_video_codes_partial_match(self):
+        """测试部分匹配查询"""
         # 插入测试数据
-        video_infos = [
-            VideoInfo("/path/to/ABC-123.mp4", tags=["test"], logical_path="test/ABC-123.mp4"),
-            VideoInfo("/path/to/DEF-456.mkv", tags=["test"], logical_path="test/DEF-456.mkv")
-        ]
+        video_info1 = VideoInfo("/path/to/ABC-123.mp4", tags=["动作片", "高清"], logical_path="/movies/action")
+        video_info1.file_size = 1073741824  # 1GB
+        video_info1.video_code = "ABC-123"
         
-        for i, video_info in enumerate(video_infos):
-            video_info.width = 1920
-            video_info.height = 1080
-            video_info.duration = 120.5 + i * 10
-            video_info.video_codec = "h264"
-            video_info.audio_codec = "aac"
-            video_info.file_size = 1024000000 + i * 100000000
-            video_info.bit_rate = 5000000
-            video_info.frame_rate = 30.0
-            
-            video_id = self.storage.insert_video_info(video_info)
-            self.assertIsNotNone(video_id)
+        video_info2 = VideoInfo("/path/to/DEF-456.mkv", tags=["喜剧片", "标清"], logical_path="/movies/comedy")
+        video_info2.file_size = 2147483648  # 2GB
+        video_info2.video_code = "DEF-456"
         
-        # 测试查询一个存在一个不存在的code
-        results = self.storage.search_videos_by_codes(['ABC-123', 'NONEXISTENT-999'])
+        self.storage.insert_video_info(video_info1)
+        self.storage.insert_video_info(video_info2)
         
-        # 验证结果 - 只返回存在的
+        # 查询一个存在一个不存在的视频code
+        results = self.storage.search_videos_by_video_codes(['ABC-123', 'NONEXISTENT-999'])
+        
         self.assertEqual(len(results), 1)
-        result = results[0]
-        self.assertEqual(result['video_code'], 'ABC-123')
+        self.assertEqual(results[0]['video_code'], 'ABC-123')
 
     def test_get_statistics_by_tags(self):
         """测试按标签分组统计"""

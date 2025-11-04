@@ -89,7 +89,7 @@ class FilenameFormatter:
         - 默认路径为项目根目录下 {default_rules_path}
         规则格式：
         rename_rules:
-          - pattern: "kfa55.com@"
+          - pattern: "site1234.com@"
             replace: ""
         """
         # 使用稳定的路径管理工具获取项目根目录
