@@ -29,6 +29,10 @@ package-mode = false
 python = "^3.10"
 python-dotenv = "^1.0.0"
 pyyaml = "^6.0.2"
+streamlit = "^1.39.0"
+selenium = "^4.24.0"
+pywebview = "^4.4.1"
+requests = "^2.31.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.3"

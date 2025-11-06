@@ -100,10 +100,30 @@ would skip: target exists: /path/to/videos/sub/ABC-123.mp4 -> /path/to/videos/AB
   - 视频信息收集工具：临时收集、合并主库、查询、统计、导出
   - 提交钩子与政策文档：安装脚本与违规拦截
 
+- 已完成：
+  - Streamlit桌面应用（基于PyWebView）
+  - 启动脚本统一管理（startup目录）
+
 - 计划中：
-  - GUI（图形界面）浏览与管理
   - 更丰富的统计报表与图表导出
   - 批量数据导入/导出的增强
+
+## 桌面应用
+
+项目提供基于Streamlit + PyWebView的桌面应用，提供独立的桌面窗口体验。
+
+### 快速启动
+```bash
+# 推荐方式：浏览器版本（最稳定）
+./startup/start-desktop.sh  # Linux/macOS
+startup/start-desktop.bat  # Windows
+
+# 桌面窗口版本（实验性）
+./startup/run-streamlit-desktop.sh  # Linux/macOS
+startup/run-streamlit-desktop.bat  # Windows
+```
+
+详细说明请参考：[桌面应用文档](startup/README_DESKTOP.md)
 
 ## 常见问题
 
