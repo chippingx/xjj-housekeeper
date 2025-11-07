@@ -37,6 +37,8 @@ requests = "^2.31.0"
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.3"
 pytest-cov = "^4.1.0"
+psutil = "^5.9.8"
+pyinstaller = { version = "^6.10.0", python = ">=3.10,<3.15" }
 
 [tool.poetry.group.test.dependencies]
 pytest = "^7.4.3"

@@ -2,7 +2,7 @@
 
 ## 概述
 
-UI模块是XJJ Housekeeper项目的前端界面层，提供基于Streamlit的Web界面和基于tkinter的桌面应用两种部署方式。
+UI 模块是 XJJ Housekeeper 项目的前端界面层。当前主实现为基于 Streamlit 的 Web 界面；为便于后续更换技术栈（如 PyQt/Tauri），已将 Streamlit 代码迁移至 `ui/streamlit/` 子目录，并在 `ui/` 下保留兼容入口（同名模块薄包装）。
 
 ## 技术栈
 
@@ -20,16 +20,22 @@ UI模块是XJJ Housekeeper项目的前端界面层，提供基于Streamlit的Web
 - **打包工具**: PyInstaller
 - **跨平台**: Windows/macOS/Linux
 
-## 代码结构
+## 代码结构（重组后）
 
 ```
 ui/
 ├── README.md                 # 本文档
-├── app.py                    # 主应用入口（Streamlit版）
-├── services.py               # 业务逻辑服务层
-├── table_renderer.py         # 表格渲染器
-├── validation.py             # 输入验证
-├── maintain_form.py          # 维护表单组件
+├── app.py                    # 兼容入口，转发到 `ui.streamlit.app`
+├── services.py               # 兼容入口，转发到 `ui.streamlit.services`
+├── table_renderer.py         # 兼容入口，转发到 `ui.streamlit.table_renderer`
+├── validation.py             # 兼容入口，转发到 `ui.streamlit.validation`
+├── maintain_form.py          # 兼容入口，转发到 `ui.streamlit.maintain_form`
+├── streamlit/                # Streamlit 实现目录（主实现）
+│   ├── app.py                # 主应用入口（Streamlit）
+│   ├── services.py           # 业务逻辑服务层（Streamlit）
+│   ├── table_renderer.py     # 表格渲染器（Streamlit）
+│   ├── validation.py         # 输入验证（Streamlit）
+│   └── maintain_form.py      # 维护表单组件（Streamlit）
 └── design/                   # 设计文档目录
     ├── design_system.md      # 设计系统规范
     └── ...
@@ -96,11 +102,10 @@ class VideoService:
 #### 4. `validation.py` - 输入验证
 **职责**: 查询输入的验证逻辑
 
-**验证规则**:
+**验证规则（当前策略）**:
 - 禁止空输入
 - 禁止通配符（`*`, `?`）
-- 支持标准视频编号格式（`ABC-123`）
-- 支持通用关键词（至少2个字符）
+- 仅支持标准视频编号格式（`ABC-123` 等）；不允许模糊关键词
 
 **正则表达式**:
 ```python
@@ -258,46 +263,31 @@ else:
 
 **改进建议**: 考虑使用传统的`<input type="file" webkitdirectory>`作为降级方案
 
-## 独立客户端部署
+## 运行与部署
 
-### Web版（Streamlit）
+### Web 版（Streamlit）
 **启动方式**:
 ```bash
-# 使用poetry
-poetry run streamlit run ui/app.py
+# 直接启动（推荐）
+python3 -m streamlit run ui/app.py --server.port 8501
 
-# 使用启动脚本
-./start-xjj-housekeeper.sh
-python xjj_housekeeper_client.py
+# 通过启动脚本
+startup/XJJ-Browser.command
 ```
 
-**特点**:
-- 基于浏览器
-- 热重载开发
-- 跨平台访问
+**说明**:
+- `ui/app.py` 是兼容入口，实际代码在 `ui/streamlit/`。
+- 支持浏览器直接访问；如需桌面客户端，使用 `startup/XJJ-Desktop.command`（Tkinter原生）。
 
-### 桌面版（tkinter）
+### 桌面版（Tkinter）
 **启动方式**:
 ```bash
-# 开发模式
-poetry run python xjj_housekeeper_desktop_full.py
-
-# 打包模式
-python build_desktop_app.py
-./dist/XJJ-Housekeeper
+startup/XJJ-Desktop.command
 ```
 
-**特点**:
-- 独立窗口应用
-- 无需浏览器
-- 原生系统集成
-- 可打包为单文件
-
-**相关文件**:
-- `../xjj_housekeeper_desktop_full.py` - 完整桌面应用
-- `../build_desktop_app.py` - 打包脚本
-- `../run-desktop.sh` - Unix启动脚本
-- `../run-desktop.bat` - Windows启动脚本
+**说明**:
+- 原生 Tkinter 客户端，入口位于 `ui/tkinter/app.py`，无需本地 Web 服务。
+- 后续若迁移到其他原生桌面技术栈（PyQt/Tauri），可在 `ui/` 并行新增实现目录。
 
 ## 后续改进点
 

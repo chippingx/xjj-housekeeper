@@ -1,77 +1,34 @@
 #!/bin/bash
-# XJJ 桌面应用启动脚本（不依赖Poetry）
+# 启动 Tkinter 桌面客户端（独立于 Streamlit）
 
-echo "🖥️ 启动XJJ桌面应用（免Poetry版）"
-echo "==============================="
+echo "🖥️ 启动 XJJ 桌面客户端 (Tkinter)"
+echo "================================"
 
-# 获取项目根目录
+# 项目根目录
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )"
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR" || exit 1
 
-# 检查Python
+# 检查 Python3
 if ! command -v python3 &> /dev/null; then
-    echo "❌ 需要Python3"
-    read -p "按回车关闭..."
-    exit 1
+  echo "❌ 需要 Python3 (>=3.10)"
+  read -p "按回车关闭..."; exit 1
 fi
 
-# 检查Streamlit
-if ! python3 -c "import streamlit" 2>/dev/null; then
-    echo "📦 安装Streamlit..."
-    python3 -m pip install streamlit --user
+# 优先使用 Poetry 运行（隔离依赖）
+if command -v poetry &> /dev/null; then
+  echo "📦 使用 Poetry 环境启动"
+  echo "🔒 修复锁文件..." 
+  poetry lock --no-interaction || { echo "❌ Poetry lock 失败"; read -p "按回车关闭..."; exit 1; }
+  poetry install --no-interaction || { echo "❌ Poetry 依赖安装失败"; read -p "按回车关闭..."; exit 1; }
+  poetry run python ui/tkinter/app.py &
+else
+  echo "🐍 使用系统 Python 启动"
+  python3 ui/tkinter/app.py &
 fi
 
-# 检查其他必要依赖
-echo "📦 检查依赖..."
-python3 -m pip install --user pandas requests 2>/dev/null || true
-
-echo "🚀 启动应用..."
-
-# 后台启动Streamlit
-python3 -m streamlit run ui/app.py \
-    --server.port=8501 \
-    --server.headless=true \
-    --browser.gatherUsageStats=false \
-    --server.address=127.0.0.1 &
-
-STREAMLIT_PID=$!
-
-# 等待服务器启动
-echo "⏳ 等待服务器启动..."
-for i in {1..15}; do
-    if curl -s http://127.0.0.1:8501 > /dev/null 2>&1; then
-        echo "✅ 服务器启动成功!"
-        break
-    fi
-    sleep 1
-done
-
-# 创建桌面窗口
-echo "🖥️ 创建桌面窗口..."
-cat > /tmp/xjj_app.html << 'EOF'
-<!DOCTYPE html>
-<html>
-<head>
-    <title>XJJ 视频管理系统</title>
-    <style>
-        body { margin: 0; padding: 0; overflow: hidden; background: #f0f2f6; }
-        iframe { width: 100%; height: 100vh; border: none; }
-    </style>
-</head>
-<body>
-    <iframe src="http://127.0.0.1:8501"></iframe>
-</body>
-</html>
-EOF
-
-open /tmp/xjj_app.html
-sleep 2
-
-echo "✅ 桌面应用已启动!"
-echo "💡 关闭此窗口将停止应用"
-read -p "按回车键停止应用..."
-
-# 清理
-kill $STREAMLIT_PID 2>/dev/null
-rm -f /tmp/xjj_app.html
-echo "🛑 应用已停止"
+APP_PID=$!
+sleep 1
+echo "✅ 已启动。关闭此窗口不会退出应用。"
+read -p "按回车键结束并关闭应用..."
+kill $APP_PID 2>/dev/null
+echo "🛑 已退出"

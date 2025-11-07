@@ -25,7 +25,6 @@
 
 - 安装依赖：
   - Poetry：`poetry install`
-  - 或 pip：`pip install -r requirements.txt`
 
 - 安装提交钩子：
   - 在项目根目录执行：`./setup_hooks.sh`
@@ -109,21 +108,14 @@ would skip: target exists: /path/to/videos/sub/ABC-123.mp4 -> /path/to/videos/AB
   - 批量数据导入/导出的增强
 
 ## 桌面应用
+项目提供基于 Streamlit 的浏览器版与桌面包装版启动方式。
 
-项目提供基于Streamlit + PyWebView的桌面应用，提供独立的桌面窗口体验。
+### 使用方式
+- 浏览器版（推荐）：双击 `startup/XJJ-Browser.command`，或运行 `poetry run python -m streamlit run ui/app.py --server.port 8501`。
+- 桌面包装版：双击 `startup/XJJ-Desktop.command`，内部通过 `poetry run` 启动本地服务并嵌入到窗口。
+- 若遇到依赖问题：在项目根目录执行 `poetry install` 后再运行脚本。
 
-### 快速启动
-```bash
-# 推荐方式：浏览器版本（最稳定）
-./startup/start-desktop.sh  # Linux/macOS
-startup/start-desktop.bat  # Windows
-
-# 桌面窗口版本（实验性）
-./startup/run-streamlit-desktop.sh  # Linux/macOS
-startup/run-streamlit-desktop.bat  # Windows
-```
-
-详细说明请参考：[桌面应用文档](startup/README_DESKTOP.md)
+详细说明请参考：`startup/README.md`
 
 ## 常见问题
 

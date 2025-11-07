@@ -1024,6 +1024,55 @@ class TestFilenameFormatterIntegration:
 - **测试环境一致性**: 开发、测试、生产环境的依赖要保持一致
 - **文档同步更新**: 依赖变更必须同步更新所有相关文档
 
+### 7. 运行与日志检查教训（2025-11-07 Streamlit 崩溃）
+
+#### 问题描述
+在将页面切换由顶部按钮改为侧边栏导航后，未在宣布完成前检查终端日志，导致服务启动时报错并崩溃：
+
+```
+streamlit.errors.StreamlitDuplicateElementKey: There are multiple elements with the same `key='sidebar_route'`.
+```
+
+根因：同一轮渲染中重复创建了带相同 `key` 的侧边栏控件（在多个位置调用侧边栏渲染）。
+
+#### 正确处理方式
+1. 立即停止服务，审查并修复重复渲染：仅在 `main()` 中渲染侧边栏，并增加一次性渲染哨兵（`st.session_state["_sidebar_nav_rendered"]`）。
+2. 重启服务并再次检查终端输出，确认无错误栈。
+3. 打开预览地址（如 `http://localhost:8501/`）进行可视验证。
+4. 将本次事故记录进《开发守则》，形成强制流程规范。
+
+#### 学到的教训
+- **宣布完成前必须检查终端日志**：任何服务启动或命令执行后，先看是否有错误或异常栈。
+- **避免重复控件 key**：Streamlit 等 UI 框架要求每个控件 `key` 唯一；同一轮渲染严禁重复创建同一控件。
+- **修复-重启-验证三步走**：修复代码后重启服务、检查日志、打开预览进行端到端确认。
+
+#### 强制执行流程（运行与日志检查原则）
+> 自本次事件起，以下流程为强制要求，违背则视为任务未完成。
+
+1. 启动或执行后检查终端日志：
+   - 关注关键字：`Traceback`、`Exception`、`ERROR`、`CRITICAL`、`Duplicate`
+   - 对于 Streamlit，确保出现启动横幅且无运行期异常栈。
+2. Web 服务健康检查（示例）：
+   - `curl -sSf --max-time 3 http://localhost:8501/ >/dev/null && echo "OK" || echo "FAIL"`
+3. 预览验证：
+   - 打开本地预览地址（如 `http://localhost:8501/`），实际点击页面交互，确认关键功能路径正常。
+4. 变更后回归测试：
+   - `pytest tests/ -q` 或项目既定测试命令，全部通过后方可汇报完成。
+5. 只保留一个服务器进程：
+   - 若需重启，先停止旧进程再启动，避免端口占用或状态混乱。
+
+#### 示例（Streamlit）
+```bash
+# 启动服务器（macOS）
+python3 -m streamlit run ui/app.py --server.port 8501 --server.headless true
+
+# 健康检查（3秒内成功返回）
+curl -sSf --max-time 3 http://localhost:8501/ >/dev/null && echo "OK" || echo "FAIL"
+
+# 运行完整测试套件
+pytest tests/ -q
+```
+
 ---
 
 ## ⚠️ 反面教材与改进
