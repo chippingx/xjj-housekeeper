@@ -99,7 +99,7 @@ class XJJDesktopApp:
             foreground=self.colors["gray800"],
             relief=tk.FLAT,
         )
-        style.map("Treeview", background=[("selected", self.colors["selected_bg"])])
+        style.map("Treeview", background=[("selected", self.colors["brand"])], foreground=[("selected", self.colors["white"])])
 
     def _build_top_nav(self) -> None:
         # 顶部水平导航：放在 topbar 右侧，左边品牌不变
@@ -193,6 +193,10 @@ class XJJDesktopApp:
             table.column(col, width=150 if col != "file_path" else 360, anchor="w")
         table.pack(fill=tk.BOTH, expand=True)
 
+        # 绑定事件
+        table.bind("<Double-1>", lambda e: self._on_table_double_click(table, e))
+        table.bind("<Button-3>", lambda e: self._on_table_right_click(table, e))
+
         # 初始提示
         self._render_table(table, [])
 
@@ -204,9 +208,11 @@ class XJJDesktopApp:
             table.insert("", tk.END, values=("暂无数据", "", "", "", ""))
             return
         for r in rows:
+            file_path = r.get("file_path")
+            dir_path = Path(file_path).parent if file_path else ""
             table.insert(
                 "", tk.END,
-                values=(r.get("filename"), r.get("file_path"), r.get("file_size"), r.get("duration"), r.get("resolution"))
+                values=(r.get("filename"), str(dir_path), r.get("file_size"), r.get("duration"), r.get("resolution"))
             )
 
     # 页面：维护
@@ -346,6 +352,140 @@ class XJJDesktopApp:
 
         tk.Button(container, text="开始维护", command=do_maintain, bg=self.colors["white"], fg=self.colors["gray800"], relief=tk.GROOVE).pack(anchor="w")
 
+    def _on_table_double_click(self, table: ttk.Treeview, event: tk.Event):
+        """表格双击事件处理"""
+        # 获取点击的行和列
+        item = table.identify_row(event.y)
+        column = table.identify_column(event.x)
+        if not item:
+            return
+        
+        # 获取行数据
+        values = table.item(item, "values")
+        if not values:
+            return
+        
+        # 路径列索引为 #2 (Treeview 的列索引从 #0 开始，但 show="headings" 时 #0 是图标列，实际列从 #1 开始)
+        if column == "#2":
+            dir_path = values[1]
+            if not dir_path:
+                return
+            
+            # 检查路径是否存在
+            if not Path(dir_path).exists():
+                messagebox.showerror("错误", "当前目录不可达")
+                return
+            
+            # 打开文件管理器
+            self._open_file_manager(dir_path)
+        else:
+            # 其他列双击播放视频
+            filename = values[0]
+            dir_path = values[1]
+            video_path = Path(dir_path) / filename
+            if not video_path.exists():
+                messagebox.showerror("错误", "当前视频文件不可达")
+                return
+            
+            # 播放视频
+            self._play_video(str(video_path))
+    
+    def _on_table_right_click(self, table: ttk.Treeview, event: tk.Event):
+        """表格右键事件处理"""
+        # 获取点击的行
+        item = table.identify_row(event.y)
+        if not item:
+            return
+        
+        # 获取行数据
+        values = table.item(item, "values")
+        if not values:
+            return
+        
+        filename = values[0]
+        dir_path = values[1]
+        video_path = Path(dir_path) / filename
+        if not video_path.exists():
+            messagebox.showerror("错误", "当前视频文件不可达")
+            return
+        
+        # 创建上下文菜单
+        menu = tk.Menu(self.root, tearoff=0)
+        
+        # 获取系统安装的视频播放器
+        players = self._get_system_video_players()
+        
+        # 添加播放器选项
+        for player_name, player_path in players.items():
+            menu.add_command(label=player_name, command=lambda p=player_path: self._play_video_with_player(video_path, p))
+        
+        # 显示菜单
+        menu.post(event.x_root, event.y_root)
+    
+    def _open_file_manager(self, path: str):
+        """打开文件管理器"""
+        try:
+            if sys.platform == "win32":
+                os.startfile(path)
+            elif sys.platform == "darwin":
+                os.system(f"open '{path}'")
+            else:  # Linux
+                os.system(f"xdg-open '{path}'")
+        except Exception as e:
+            messagebox.showerror("错误", f"无法打开文件管理器: {str(e)}")
+    
+    def _play_video(self, video_path: str):
+        """使用默认播放器播放视频"""
+        try:
+            if sys.platform == "win32":
+                os.startfile(video_path)
+            elif sys.platform == "darwin":
+                os.system(f"open '{video_path}'")
+            else:  # Linux
+                os.system(f"xdg-open '{video_path}'")
+        except Exception as e:
+            messagebox.showerror("播放失败", f"无法播放视频: {str(e)}")
+            # 播放失败时打开文件管理器
+            self._open_file_manager(Path(video_path).parent)
+    
+    def _get_system_video_players(self):
+        """获取系统安装的视频播放器"""
+        players = {}
+        
+        if sys.platform == "win32":
+            # Windows 系统获取默认播放器和常见播放器
+            players["默认播放器"] = None  # 使用默认方式打开
+            # 可以添加更多常见播放器路径
+        elif sys.platform == "darwin":
+            # macOS 系统获取默认播放器和常见播放器
+            players["默认播放器"] = None  # 使用默认方式打开
+            players["QuickTime Player"] = "/Applications/QuickTime Player.app"
+            players["VLC"] = "/Applications/VLC.app"
+        else:  # Linux
+            # Linux 系统获取默认播放器和常见播放器
+            players["默认播放器"] = None  # 使用默认方式打开
+            players["VLC"] = "vlc"
+            players["Totem"] = "totem"
+        
+        return players
+    
+    def _play_video_with_player(self, video_path: Path, player_path: str):
+        """使用指定播放器播放视频"""
+        try:
+            if not player_path:
+                # 使用默认方式打开
+                self._play_video(str(video_path))
+            elif sys.platform == "win32":
+                os.system(f'"{player_path}" "{video_path}"')
+            elif sys.platform == "darwin":
+                os.system(f'open -a "{player_path}" "{video_path}"')
+            else:  # Linux
+                os.system(f'{player_path} "{video_path}"')
+        except Exception as e:
+            messagebox.showerror("播放失败", f"无法使用该播放器播放视频: {str(e)}")
+            # 播放失败时打开文件管理器
+            self._open_file_manager(video_path.parent)
+    
     def run(self) -> None:
         self.root.mainloop()
 

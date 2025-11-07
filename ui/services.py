@@ -62,22 +62,23 @@ class VideoService:
     
     def search_videos(self, keyword: str) -> List[Dict[str, str]]:
         """搜索视频"""
+        # 空字符串检查放在try块外面，这样异常不会被捕获
+        if not isinstance(keyword, str) or keyword.strip() == "":
+            raise ValueError("keyword must be non-empty and exact")
+        
         try:
             self._ensure_storage()
             
-            if not isinstance(keyword, str) or keyword.strip() == "":
-                return []
-            
-            # 简单的文件名搜索
+            # 精确匹配视频编号
             cursor = self.storage.connection.cursor()
             cursor.execute(
                 """
                 SELECT filename, file_path, file_size, duration_formatted, resolution 
                 FROM video_info 
-                WHERE filename LIKE ? OR file_path LIKE ?
+                WHERE filename = ? OR file_path = ?
                 LIMIT 100
                 """,
-                (f"%{keyword}%", f"%{keyword}%")
+                (keyword, keyword)
             )
             
             results = []

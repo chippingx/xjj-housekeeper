@@ -19,6 +19,7 @@ def test_services_error_handling_placeholder():
         svc.search_videos("")
     assert "keyword must be non-empty and exact" in str(ei.value)
 
-    with pytest.raises(RuntimeError) as ei2:
-        svc.start_maintain(path="/tmp", labels=None, logical_path=None)
-    assert "not implemented" in str(ei2.value)
+    # start_maintain 已经实现，不再抛出 RuntimeError
+    result = svc.start_maintain(path="/tmp", labels=None, logical_path=None)
+    assert isinstance(result, dict)
+    assert "success" in result

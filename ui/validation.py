@@ -25,17 +25,13 @@ def validate_query_input(text: str) -> Tuple[bool, str]:
     
     stripped = text.strip()
     
-    # 检查是否为空或包含通配符
+    # 检查是否包含通配符
     if "*" in stripped or "?" in stripped:
         return False, QUERY_INVALID_HINT
     
-    # 如果是标准视频编号格式，允许查询
+    # 只允许标准视频编号格式的查询
     if is_valid_video_code(stripped):
         return True, ""
-    
-    # 如果不是标准格式但长度合理（至少2个字符），也允许查询
-    if len(stripped) >= 2:
-        return True, "将搜索包含关键词的视频文件"
     
     # 其他情况不允许
     return False, QUERY_INVALID_HINT
