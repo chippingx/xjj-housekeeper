@@ -61,29 +61,44 @@ class VideoService:
             self.merge_manager = SmartMergeManager(self.storage)
     
     def search_videos(self, keyword: str) -> List[Dict[str, str]]:
-        """搜索视频"""
-        # 空字符串检查放在try块外面，这样异常不会被捕获
-        if not isinstance(keyword, str) or keyword.strip() == "":
-            raise ValueError("keyword must be non-empty and exact")
-        
+        """搜索视频（基于视频code的模糊匹配，支持输入即搜）"""
         try:
             self._ensure_storage()
-            
-            # 精确匹配视频编号
+
+            # 空或非法输入直接返回空结果，便于“输入即搜”体验
+            if not isinstance(keyword, str) or keyword.strip() == "":
+                return []
+
             cursor = self.storage.connection.cursor()
-            cursor.execute(
-                """
-                SELECT filename, file_path, file_size, duration_formatted, resolution 
-                FROM video_info 
-                WHERE filename = ? OR file_path = ?
-                LIMIT 100
-                """,
-                (keyword, keyword)
-            )
-            
+            # 检查列是否存在，避免早期库缺少video_code导致查询失败
+            cursor.execute("PRAGMA table_info(video_info)")
+            columns = [col[1] for col in cursor.fetchall()]
+
+            if 'video_code' in columns:
+                cursor.execute(
+                    """
+                    SELECT video_code, filename, file_path, file_size, duration_formatted, resolution
+                    FROM video_info
+                    WHERE video_code LIKE ?
+                    ORDER BY updated_time DESC
+                    LIMIT 100
+                    """,
+                    (f"%{keyword}%",)
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT NULL AS video_code, filename, file_path, file_size, duration_formatted, resolution
+                    FROM video_info
+                    WHERE filename LIKE ? OR file_path LIKE ?
+                    ORDER BY updated_time DESC
+                    LIMIT 100
+                    """,
+                    (f"%{keyword}%", f"%{keyword}%")
+                )
+
             results = []
             for row in cursor.fetchall():
-                # 格式化文件大小
                 file_size_bytes = row['file_size']
                 if file_size_bytes:
                     file_size_gb = file_size_bytes / (1024 * 1024 * 1024)
@@ -94,17 +109,19 @@ class VideoService:
                         file_size_formatted = f"{file_size_mb:.0f}M"
                 else:
                     file_size_formatted = "未知"
-                
+
+                # 统一 UI 字段：首列为“视频”，展示视频code，若缺失则回退文件名
+                video_label = row['video_code'] if row['video_code'] else row['filename']
                 results.append({
-                    'filename': row['filename'],
+                    'video': video_label,
                     'file_path': row['file_path'],
                     'file_size': file_size_formatted,
                     'duration': row['duration_formatted'],
                     'resolution': row['resolution']
                 })
-            
+
             return results
-            
+
         except Exception as e:
             self.error_handler.handle_database_error(f"搜索视频失败: {e}", self.db_path, "search")
             return []

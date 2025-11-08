@@ -44,6 +44,8 @@ class XJJDesktopApp:
             "gray700": "#374151",
             "gray800": "#1F2937",
             "brand": "#2563EB",
+            # 素雅浅蓝配色，用于按钮与选中态
+            "accent": "#60A5FA",
             "selected_bg": "#EEF2FF",
             "selected_border": "#C7D2FE",
         }
@@ -138,19 +140,20 @@ class XJJDesktopApp:
         # 顶部水平导航选中态：高亮文字并加底部指示线
         for key, lbl in self.nav_items.items():
             selected = (key == self.current_route)
-            lbl.configure(
-                bg=self.colors["white"],
-                fg=self.colors["gray800"],
-                font=("Helvetica", 12, "bold")
-            )
-            # 为选中项添加下划线指示（通过底部边框模拟）
-            try:
-                if selected:
-                    lbl.configure(highlightthickness=2, highlightbackground=self.colors["brand"], highlightcolor=self.colors["brand"])
-                else:
-                    lbl.configure(highlightthickness=0)
-            except Exception:
-                pass
+            if selected:
+                lbl.configure(
+                    bg=self.colors["accent"],
+                    fg=self.colors["white"],
+                    font=("Helvetica", 12, "bold"),
+                    highlightthickness=0
+                )
+            else:
+                lbl.configure(
+                    bg=self.colors["white"],
+                    fg=self.colors["gray800"],
+                    font=("Helvetica", 12, "bold"),
+                    highlightthickness=0
+                )
 
 
     # 页面：查询
@@ -166,32 +169,45 @@ class XJJDesktopApp:
         form = tk.Frame(container, bg=self.colors["bg"]) 
         form.pack(fill=tk.X)
 
-        tk.Label(form, text="查询关键词", bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 12)).pack(side=tk.LEFT)
+        tk.Label(form, text="视频码", bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 12)).pack(side=tk.LEFT)
         self.query_var = tk.StringVar()
         entry = tk.Entry(form, textvariable=self.query_var, width=40)
         entry.pack(side=tk.LEFT, padx=8)
 
-        def do_search():
-            keyword = self.query_var.get().strip()
-            if len(keyword) == 0:
-                messagebox.showinfo("提示", "请输入关键词进行查询")
-                return
+        # 结果表格（提前创建，避免输入回调引用未准备好的表格导致渲染阻塞）
+        table_container = tk.Frame(container, bg=self.colors["bg"]) 
+        table_container.pack(fill=tk.BOTH, expand=True, pady=12)
+        columns = ("video", "file_path", "file_size", "duration", "resolution")
+        table = ttk.Treeview(table_container, columns=columns, show="headings")
+        left_cols = {"video", "file_path"}
+        right_cols = {"file_size", "duration", "resolution"}
+        for col, text in zip(columns, ("视频", "路径", "大小", "时长", "分辨率")):
+            # 表头对齐
+            table.heading(col, text=text, anchor="w" if col in left_cols else "e")
+            # 单元格对齐与列宽
+            width = 360 if col == "file_path" else 150
+            table.column(col, width=width, anchor="w" if col in left_cols else "e")
+        table.pack(fill=tk.BOTH, expand=True)
+
+        # 输入即搜（模糊匹配 video_code）
+        def do_search_live():
+            keyword = self.query_var.get()
             results = search_videos(keyword) or []
             self._render_table(table, results)
 
+        def do_search():
+            # 保留按钮/回车触发，与实时搜索一致
+            do_search_live()
+
+        # 绑定输入事件（实时搜索）
+        try:
+            self.query_var.trace_add('write', lambda *_: do_search_live())
+        except Exception:
+            entry.bind("<KeyRelease>", lambda e: do_search_live())
+
         # 回车直接触发查询
         entry.bind("<Return>", lambda e: do_search())
-        tk.Button(form, text="搜索", command=do_search, bg=self.colors["white"], fg=self.colors["gray800"], relief=tk.GROOVE).pack(side=tk.LEFT, padx=8)
-
-        # 结果表格
-        table_container = tk.Frame(container, bg=self.colors["bg"]) 
-        table_container.pack(fill=tk.BOTH, expand=True, pady=12)
-        columns = ("filename", "file_path", "file_size", "duration", "resolution")
-        table = ttk.Treeview(table_container, columns=columns, show="headings")
-        for col, text in zip(columns, ("文件名", "路径", "大小", "时长", "分辨率")):
-            table.heading(col, text=text)
-            table.column(col, width=150 if col != "file_path" else 360, anchor="w")
-        table.pack(fill=tk.BOTH, expand=True)
+        tk.Button(form, text="搜索", command=do_search, bg=self.colors["white"], fg="#000000", relief=tk.GROOVE).pack(side=tk.LEFT, padx=8)
 
         # 绑定事件
         table.bind("<Double-1>", lambda e: self._on_table_double_click(table, e))
@@ -200,7 +216,19 @@ class XJJDesktopApp:
         # 初始提示
         self._render_table(table, [])
 
+        # 切回查询页后立即聚焦并刷新渲染，避免需点击才完全渲染
+        try:
+            entry.focus_set()
+        except Exception:
+            pass
+        self.root.update_idletasks()
+
     def _render_table(self, table: ttk.Treeview, rows: list[dict]) -> None:
+        # 为行绑定源数据（用于双击/右键操作）
+        if not hasattr(self, "_row_cache"):
+            self._row_cache = {}
+        else:
+            self._row_cache.clear()
         for item in table.get_children():
             table.delete(item)
         if not rows:
@@ -210,10 +238,11 @@ class XJJDesktopApp:
         for r in rows:
             file_path = r.get("file_path")
             dir_path = Path(file_path).parent if file_path else ""
-            table.insert(
+            item_id = table.insert(
                 "", tk.END,
-                values=(r.get("filename"), str(dir_path), r.get("file_size"), r.get("duration"), r.get("resolution"))
+                values=(r.get("video"), str(dir_path), r.get("file_size"), r.get("duration"), r.get("resolution"))
             )
+            self._row_cache[item_id] = r
 
     # 页面：维护
     def show_maintain_page(self) -> None:
@@ -365,30 +394,24 @@ class XJJDesktopApp:
         if not values:
             return
         
-        # 路径列索引为 #2 (Treeview 的列索引从 #0 开始，但 show="headings" 时 #0 是图标列，实际列从 #1 开始)
+        # 路径列索引为 #2；使用源数据中的 file_path 更准确
+        row = self._row_cache.get(item, {})
+        file_path = row.get("file_path")
+        dir_path = str(Path(file_path).parent) if file_path else values[1]
+
         if column == "#2":
-            dir_path = values[1]
             if not dir_path:
                 return
-            
-            # 检查路径是否存在
             if not Path(dir_path).exists():
                 messagebox.showerror("错误", "当前目录不可达")
                 return
-            
-            # 打开文件管理器
             self._open_file_manager(dir_path)
         else:
-            # 其他列双击播放视频
-            filename = values[0]
-            dir_path = values[1]
-            video_path = Path(dir_path) / filename
-            if not video_path.exists():
+            # 其他列双击播放视频：直接使用 file_path（避免视频码与文件名不一致问题）
+            if not file_path or not Path(file_path).exists():
                 messagebox.showerror("错误", "当前视频文件不可达")
                 return
-            
-            # 播放视频
-            self._play_video(str(video_path))
+            self._play_video(str(file_path))
     
     def _on_table_right_click(self, table: ttk.Treeview, event: tk.Event):
         """表格右键事件处理"""
@@ -402,10 +425,9 @@ class XJJDesktopApp:
         if not values:
             return
         
-        filename = values[0]
-        dir_path = values[1]
-        video_path = Path(dir_path) / filename
-        if not video_path.exists():
+        row = self._row_cache.get(item, {})
+        file_path = row.get("file_path")
+        if not file_path or not Path(file_path).exists():
             messagebox.showerror("错误", "当前视频文件不可达")
             return
         
@@ -417,7 +439,7 @@ class XJJDesktopApp:
         
         # 添加播放器选项
         for player_name, player_path in players.items():
-            menu.add_command(label=player_name, command=lambda p=player_path: self._play_video_with_player(video_path, p))
+            menu.add_command(label=player_name, command=lambda p=player_path: self._play_video_with_player(Path(file_path), p))
         
         # 显示菜单
         menu.post(event.x_root, event.y_root)
