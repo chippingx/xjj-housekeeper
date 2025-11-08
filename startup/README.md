@@ -16,6 +16,14 @@ startup/XJJ-Browser.command
 startup/XJJ-Desktop.command
 ```
 
+### 🪟 Windows双击启动
+
+#### 桌面版本（原生 Tkinter 客户端）
+```bat
+# 双击这个文件（Windows）
+startup\\XJJ-Desktop.bat
+```
+
 ### 使用方式
 
 - 浏览器版（推荐）：双击 `startup/XJJ-Browser.command`，或运行 `poetry run python -m streamlit run ui/app.py --server.port 8501`。
@@ -27,6 +35,7 @@ startup/XJJ-Desktop.command
 ### 启动脚本
 - `XJJ-Browser.command` — 浏览器版本（推荐，最稳定）
 - `XJJ-Desktop.command` — 原生桌面客户端（Tkinter，独立于 Streamlit）
+- `XJJ-Desktop.bat` — Windows 启动脚本（原生 Tkinter 客户端）
 - `Build-XJJ-Desktop-App.command` — 打包 Tkinter 客户端为 macOS `.app`（可选图标）
 - `Open-XJJ-Desktop-App.command` — 打开已打包的 `.app`
 
@@ -52,7 +61,8 @@ startup/XJJ-Desktop.command
 #### 原生桌面客户端（Tkinter）
 - 采用 Python 内置 Tkinter，无需本地 Web 服务
 - 入口：`ui/tkinter/app.py`
-- 启动脚本：`startup/XJJ-Desktop.command`
+- 启动脚本（macOS）：`startup/XJJ-Desktop.command`
+- 启动脚本（Windows）：`startup/XJJ-Desktop.bat`
 - 打包：`startup/Build-XJJ-Desktop-App.command` 使用 PyInstaller 生成 `dist/XJJ-Housekeeper.app`
 - 图标：可将 `.icns` 文件放置到 `assets/icons/xjj.icns`，打包时自动识别
 
@@ -60,6 +70,7 @@ startup/XJJ-Desktop.command
 
 - **Python 3.8+** - 系统预装或自行安装
 - **macOS 10.15+** - 支持现代macOS特性
+- **Windows 10+** - 通过 `startup/XJJ-Desktop.bat` 启动原生 Tkinter 客户端
 - **网络连接** - 首次运行时安装依赖
 
 ## 🔧 故障排除
@@ -98,13 +109,14 @@ poetry run python -m streamlit run ui/app.py --server.port 8501
 startup/
 ├── README.md              # 本文档
 ├── XJJ-Browser.command    # 浏览器版启动脚本（调用 `streamlit run ui/app.py`）
-└── XJJ-Desktop.command    # 桌面版启动脚本（原生 Tkinter 客户端）
+├── XJJ-Desktop.command    # macOS 桌面版启动脚本（原生 Tkinter 客户端）
+└── XJJ-Desktop.bat        # Windows 桌面版启动脚本（原生 Tkinter 客户端）
 
 ## 🔄 与 UI 目录的关系
 
 - Streamlit UI 代码位于 `ui/streamlit/` 子目录；原生桌面客户端位于 `ui/tkinter/`。
 - 兼容入口 `ui/app.py` 作为薄包装，继续支持浏览器版本。
-- 桌面版通过 `startup/XJJ-Desktop.command` 直接启动 Tkinter 客户端。
+- 桌面版通过 `startup/XJJ-Desktop.command`（macOS）或 `startup/XJJ-Desktop.bat`（Windows）启动 Tkinter 客户端。
 ```
 
 ---
