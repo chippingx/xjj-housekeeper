@@ -200,6 +200,20 @@ class XJJDesktopApp:
                     highlightthickness=0
                 )
 
+    def _attach_entry_context_menu(self, entry: tk.Entry) -> None:
+        menu = tk.Menu(entry, tearoff=0)
+        menu.add_command(label="剪切", command=lambda: entry.event_generate("<<Cut>>"))
+        menu.add_command(label="复制", command=lambda: entry.event_generate("<<Copy>>"))
+        menu.add_command(label="粘贴", command=lambda: entry.event_generate("<<Paste>>"))
+
+        def show_menu(event: tk.Event):
+            menu.tk_popup(event.x_root, event.y_root)
+            menu.grab_release()
+
+        for sequence in ("<Button-3>", "<Button-2>", "<Control-Button-1>"):
+            entry.bind(sequence, show_menu, add="+")
+
+        entry._context_menu = menu
 
     # 页面：查询
     def show_query_page(self) -> None:
@@ -218,6 +232,7 @@ class XJJDesktopApp:
         self.query_var = tk.StringVar()
         entry = tk.Entry(form, textvariable=self.query_var, width=40)
         entry.pack(side=tk.LEFT, padx=8)
+        self._attach_entry_context_menu(entry)
 
         # 结果表格（提前创建，避免输入回调引用未准备好的表格导致渲染阻塞）
         table_container = tk.Frame(container, bg=self.colors["bg"]) 
@@ -236,7 +251,7 @@ class XJJDesktopApp:
 
         # 输入即搜（模糊匹配 video_code）
         def do_search_live():
-            keyword = self.query_var.get()
+            keyword = self.query_var.get().strip()
             results = search_videos(keyword) or []
             self._render_table(table, results)
 
@@ -305,6 +320,7 @@ class XJJDesktopApp:
         self.scan_dir_var = tk.StringVar()
         entry = tk.Entry(form, textvariable=self.scan_dir_var, width=50)
         entry.pack(side=tk.LEFT, padx=8)
+        self._attach_entry_context_menu(entry)
 
         def choose_dir():
             d = filedialog.askdirectory()
