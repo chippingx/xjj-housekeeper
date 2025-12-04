@@ -2,405 +2,111 @@
 
 ## 概述
 
-UI 模块是 XJJ Housekeeper 项目的前端界面层。当前主实现为基于 Streamlit 的 Web 界面；为便于后续更换技术栈（如 PyQt/Tauri），已将 Streamlit 代码迁移至 `ui/streamlit/` 子目录，并在 `ui/` 下保留兼容入口（同名模块薄包装）。
+UI 模块是 XJJ Housekeeper 的本地界面层，目前以 Tkinter 为主实现（桌面客户端），Streamlit 代码仅用于早期样式验证，后续将移除。
+
+- Web（Streamlit）主入口：`ui/app.py`
+- 桌面版（Tkinter）入口：`ui/tkinter/app.py`
+- 另有一套并行的 Streamlit 实现位于 `ui/streamlit/`，用于分层与样式验证（不作为默认入口）。
 
 ## 技术栈
 
-### Web版本（Streamlit）
-- **框架**: Streamlit 1.39.0+
-- **语言**: Python 3.10+
-- **样式**: 自定义HTML/CSS（内联样式）
-- **JavaScript**: 原生JS（无外部库）
-- **数据库**: SQLite3
-- **后端服务**: 基于 `tools/video_info_collector` 模块
+- Python 3.10+
+- Streamlit 1.39+
+- Tkinter（桌面原生）
+- SQLite3（本地数据库，路径见下文）
+- 业务能力沿用 `tools/video_info_collector` 模块
 
-### 桌面版本（tkinter）
-- **框架**: tkinter (Python内置)
-- **语言**: Python 3.10+
-- **打包工具**: PyInstaller
-- **跨平台**: Windows/macOS/Linux
-
-## 代码结构（重组后）
+## 目录结构（当前）
 
 ```
 ui/
-├── README.md                 # 本文档
-├── app.py                    # 兼容入口，转发到 `ui.streamlit.app`
-├── services.py               # 兼容入口，转发到 `ui.streamlit.services`
-├── table_renderer.py         # 兼容入口，转发到 `ui.streamlit.table_renderer`
-├── validation.py             # 兼容入口，转发到 `ui.streamlit.validation`
-├── maintain_form.py          # 兼容入口，转发到 `ui.streamlit.maintain_form`
-├── streamlit/                # Streamlit 实现目录（主实现）
-│   ├── app.py                # 主应用入口（Streamlit）
-│   ├── services.py           # 业务逻辑服务层（Streamlit）
-│   ├── table_renderer.py     # 表格渲染器（Streamlit）
-│   ├── validation.py         # 输入验证（Streamlit）
-│   └── maintain_form.py      # 维护表单组件（Streamlit）
-└── design/                   # 设计文档目录
-    ├── design_system.md      # 设计系统规范
-    └── ...
+├── README.md
+├── app.py                 # Streamlit 主入口（当前实际运行入口）
+├── services.py            # 业务服务（Streamlit 入口使用此文件）
+├── table_renderer.py      # 结果表格渲染（HTML）
+├── validation.py          # 查询输入校验（精确匹配）
+├── maintain_form.py       # 维护页样式/脚本片段（仅样式与静态片段）
+├── streamlit/             # 并行的 Streamlit 实现（包含同名文件，供验证/比对）
+└── tkinter/               # Tkinter 桌面实现
+    ├── app.py
+    ├── README.md
+    └── implementation-logs.md
 ```
 
-### 文件说明
+## 文件说明（基于当前入口 ui/app.py 与同目录实现）
 
-#### 1. `app.py` - 主应用入口
-**职责**: 应用路由、页面渲染、状态管理
+1) `app.py`（Streamlit 主入口）
+- 职责：页面路由（查询/维护）、状态管理、布局与交互
+- 行为：
+  - 查询页：文本框输入变化即触发查询尝试；仅当输入通过校验（精确格式）时显示结果
+  - 维护页：支持通过系统对话框选择目录（macOS 采用子进程隔离 Tkinter 方案），并显示执行结果摘要
 
-**核心功能**:
-- 双页面路由系统（查询/维护）
-- Session State管理
-- 页面组件编排
-- 查询交互逻辑
+2) `services.py`
+- 职责：封装数据库访问与扫描/维护逻辑（调用 `tools/video_info_collector`）
+- 关键点：
+  - `search_videos(keyword)`：空字符串返回空结果；优先按 `video_code` 模糊匹配，不存在该列时回退到 `filename/file_path` 模糊匹配；文件大小格式化为 `G/M`
+  - `start_maintain(path, labels, logical_path)`：调用增强扫描；当找到 0 个可处理文件时，当前实现返回“成功（空结果）”的提示摘要
+  - 默认数据库路径：`output/video_info_collector/database/video_database.db`（如不存在会自动创建父目录）
 
-**关键常量**:
-```python
-ROUTE_QUERY = "query"           # 查询路由
-ROUTE_MAINTAIN = "maintain"     # 维护路由
-QUERY_PLACEHOLDER = "按视频编号精确查询（示例：ABC-123）"
-```
+3) `table_renderer.py`
+- 职责：将服务层返回的行数据渲染为 HTML 表格
+- 列：`视频 | 大小 | 路径`，`视频/大小` 不换行，`路径` 可换行（break-all）
 
-**主要函数**:
-- `render_query_page()` - 渲染查询页面
-- `render_maintain_page()` - 渲染维护页面
-- `_init_session_state()` - 初始化会话状态
+4) `validation.py`
+- 职责：查询输入校验
+- 规则：仅允许精确匹配的视频编号格式（示例：`ABC-123`），禁止空/通配符（`*`/`?`）
 
-#### 2. `services.py` - 业务逻辑服务层
-**职责**: 数据库操作、视频扫描、业务逻辑封装
+5) `maintain_form.py`
+- 职责：提供维护页所需的样式与静态脚本片段（非必需，当前入口主要使用 Streamlit 原生组件）
 
-**核心类**:
-```python
-class VideoService:
-    - search_videos(keyword: str) -> List[Dict]
-    - start_maintain(path: str, labels: str, logical_path: str) -> Dict
-```
+## 已实现功能（基于当前代码）
 
-**主要功能**:
-- 视频搜索（模糊匹配）
-- 目录扫描与导入
-- 文件大小格式化（GB/MB显示）
-- 错误处理与友好提示
+- 查询模式（Streamlit）
+  - 精确格式校验（通过后显示结果）
+  - 输入变化自动触发查询尝试（不符合格式时仅提示，不显示表格）
+  - 结果表格展示、空状态/错误提示
+- 维护模式（Streamlit）
+  - 目录选择（macOS 采用子进程运行 Tkinter 避免崩溃）
+  - 进度/结果摘要反馈（成功/错误信息友好）
+- 桌面版（Tkinter）
+  - 顶部水平导航（查询/维护）
+  - 查询页：基于 `video_code` 的模糊匹配，输入即搜；双击“路径”打开所在目录，其它列双击用默认播放器播放视频；右键可选择播放器
+  - 维护页：真实进度条、日志区域、完成摘要
 
-**数据库路径**: `output/video_info_collector/database/video_database.db`
+## 运行与启动
 
-#### 3. `table_renderer.py` - 表格渲染器
-**职责**: 搜索结果的HTML表格渲染
-
-**功能特点**:
-- 自定义HTML表格样式
-- 字段映射（数据库字段 → 显示字段）
-- 响应式设计（移动端适配）
-
-**字段映射（统一首列为“视频”）**:
-```python
-# 统一使用 'video' 字段：优先 video_code，缺省回退文件名
-'video' -> '视频'
-'file_size' -> '大小'
-'file_path' -> '路径'
-'duration' -> 时长（在视频列显示）
-'resolution' -> 分辨率（在视频列显示）
-```
-
-#### 4. `validation.py` - 输入验证
-**职责**: 查询输入的验证逻辑
-
-**验证规则**:
-- 桌面版（Tkinter）：支持基于视频 code 的模糊搜索与“输入即搜”；空输入返回空结果。
-- Web版（Streamlit）：沿用现有策略，可按需调整为模糊搜索。
-
-**正则表达式**:
-```python
-VIDEO_CODE_REGEX = r"^[A-Z]{3,6}-\d{3,4}$"
-```
-
-#### 5. `maintain_form.py` - 维护表单组件
-**职责**: 维护页面的表单UI和交互逻辑
-
-**主要功能**:
-- 目录选择对话框（跨平台）
-- 表单样式定义
-- 处理中遮罩
-- 完成弹框
-
-**复杂度**: 包含大量JavaScript代码处理浏览器兼容性
-
-## 实现功能
-
-### 1. 查询模式
-- ✅ 视频码搜索（模糊）
-- ✅ 实时搜索（输入即搜，Tkinter）
-- ✅ 结果表格显示
-- ✅ 文件大小格式化
-- ✅ 空态提示
-
-### 2. 维护模式
-- ✅ 目录选择（文件对话框）
-- ✅ 视频扫描导入
-- ✅ 进度反馈
-- ✅ 错误提示
-- ✅ 完成弹框
-
-### 3. 交互优化
-- ✅ 回车键查询
-- ✅ 按钮状态管理
-- ✅ Session State持久化
-- ✅ URL路由参数
-
-## 关键技术点
-
-### 1. macOS tkinter线程问题解决方案
-**问题**: macOS上tkinter的文件对话框会导致Streamlit崩溃
-
-**解决方案**: 使用subprocess隔离tkinter进程
-```python
-# 在独立进程中运行tkinter
-script_content = '''
-import tkinter as tk
-from tkinter import filedialog
-
-root = tk.Tk()
-root.withdraw()
-folder = filedialog.askdirectory(title="选择扫描目录")
-root.destroy()
-
-with open(temp_file, "w") as f:
-    f.write(folder if folder else "")
-'''
-
-subprocess.run([sys.executable, '-c', script_content], ...)
-```
-
-**相关文件**: `app.py` 第170-220行
-
-### 2. 搜索交互优化
-**问题**: 用户需要回车两次才能触发搜索
-
-**解决方案**: 通过Session State追踪输入变化
-```python
-if "previous_query" not in st.session_state:
-    st.session_state.previous_query = ""
-
-current_query = query.strip()
-if current_query != st.session_state.previous_query:
-    if current_query:  # 只有非空内容才触发查询
-        do_search = True
-    st.session_state.previous_query = current_query
-```
-
-**相关文件**: `app.py` 第79-87行
-
-### 3. 字段映射问题
-**问题**: 数据库返回字段与表格显示字段不匹配
-
-**解决方案**: 在`table_renderer.py`中添加映射层
-```python
-def render_search_results_table(rows: List[Dict[str, str]]) -> str:
-    mapped_rows = []
-    for row in rows:
-        mapped_row = {
-            '视频': f"{row.get('filename', '')}<br><small>{row.get('duration', '')} | {row.get('resolution', '')}</small>",
-            '大小': row.get('file_size', ''),
-            '路径': row.get('file_path', '')
-        }
-        mapped_rows.append(mapped_row)
-    return render_table(mapped_rows)
-```
-
-**相关文件**: `table_renderer.py` 第23-34行
-
-### 4. 文件大小格式化
-**需求**: 显示为两位小数的GB单位
-
-**实现**:
-```python
-file_size_gb = file_size_bytes / (1024 * 1024 * 1024)
-if file_size_gb >= 1:
-    file_size_formatted = f"{file_size_gb:.2f}G"
-else:
-    file_size_mb = file_size_bytes / (1024 * 1024)
-    file_size_formatted = f"{file_size_mb:.0f}M"
-```
-
-**相关文件**: `services.py` 第75-82行
-
-## 已知问题与解决方案
-
-### 1. ❌ 文件对话框在macOS崩溃
-**状态**: ✅ 已解决
-
-**解决方案**: 使用subprocess隔离tkinter进程
-
-**影响范围**: 维护页面的"选择目录"功能
-
-### 2. ❌ 搜索需要回车两次
-**状态**: ✅ 已解决
-
-**解决方案**: Session State追踪输入变化，自动触发搜索
-
-**影响范围**: 查询页面的搜索交互
-
-### 3. ❌ 搜索结果表格显示空白
-**状态**: ✅ 已解决
-
-**解决方案**: 添加字段映射层，统一数据格式
-
-**影响范围**: 查询结果显示
-
-### 4. ❌ 数据导入后显示误导性警告
-**状态**: ✅ 已解决
-
-**解决方案**: 区分"无文件"和"处理失败"两种情况，提供详细统计信息
-
-**影响范围**: 维护页面的错误提示
-
-### 5. ⚠️ 浏览器兼容性问题
-**状态**: 部分解决
-
-**问题**: File System Access API仅在Chrome 86+和Edge 86+中支持
-
-**解决方案**: 提供降级方案（手动输入路径）+ 友好提示
-
-**影响范围**: 维护页面的目录选择功能
-
-**改进建议**: 考虑使用传统的`<input type="file" webkitdirectory>`作为降级方案
-
-## 运行与部署
-
-### Web 版（Streamlit）
-**启动方式**:
+- Web 版（Streamlit）
 ```bash
-# 直接启动（推荐）
 python3 -m streamlit run ui/app.py --server.port 8501
-
-# 通过启动脚本
-startup/XJJ-Browser.command
 ```
+说明：`ui/app.py` 为实际入口；`ui/streamlit/` 目录为并行实现（非默认入口）。
 
-**说明**:
-- `ui/app.py` 是兼容入口，实际代码在 `ui/streamlit/`。
-- 支持浏览器直接访问；如需桌面客户端，使用 `startup/XJJ-Desktop.command`（Tkinter原生）。
-
-### 桌面版（Tkinter）
-**启动方式**:
+- 桌面版（Tkinter）
 ```bash
-startup/XJJ-Desktop.command
+python ui/tkinter/app.py
+# 或
+python -m ui.tkinter.app
 ```
-
-**说明**:
-- 原生 Tkinter 客户端，入口位于 `ui/tkinter/app.py`，无需本地 Web 服务。
-- 后续若迁移到其他原生桌面技术栈（PyQt/Tauri），可在 `ui/` 并行新增实现目录。
-
-**查询行为（Tkinter）**:
-- 基于 `video_code` 的模糊匹配（`LIKE '%keyword%'`）
-- 空输入返回空结果，便于“输入即搜”体验
-- 首列显示“视频”（优先 video_code，缺省回退文件名）
-
-## 后续改进点
-
-### 功能增强
-1. **高级搜索**
-   - [ ] 多条件组合搜索
-   - [ ] 正则表达式搜索
-   - [ ] 搜索历史记录
-   - [ ] 搜索结果导出
-
-2. **批量操作**
-   - [ ] 批量删除
-   - [ ] 批量编辑元数据
-   - [ ] 批量导出
-
-3. **数据可视化**
-   - [ ] 视频数量统计图表
-   - [ ] 存储空间分布
-   - [ ] 时长分布分析
-
-4. **文件预览**
-   - [ ] 视频缩略图
-   - [ ] 视频播放器集成
-   - [ ] 元数据详情页
-
-### 技术优化
-1. **性能优化**
-   - [ ] 搜索结果分页
-   - [ ] 虚拟滚动（大量结果）
-   - [ ] 数据库查询优化
-   - [ ] 缓存机制
-
-2. **用户体验**
-   - [ ] 深色模式
-   - [ ] 快捷键支持
-   - [ ] 拖拽文件导入
-   - [ ] 更好的加载状态
-
-3. **浏览器兼容性**
-   - [ ] Safari支持优化
-   - [ ] Firefox兼容性测试
-   - [ ] 移动端适配
-
-4. **错误处理**
-   - [ ] 更详细的错误提示
-   - [ ] 错误日志收集
-   - [ ] 崩溃恢复机制
-
-### 代码质量
-1. **重构**
-   - [ ] 拆分大文件（`maintain_form.py`过大）
-   - [ ] 提取JavaScript到独立文件
-   - [ ] 组件化改造
-
-2. **测试**
-   - [ ] 单元测试覆盖
-   - [ ] 集成测试
-   - [ ] UI自动化测试
-
-3. **文档**
-   - [ ] API文档
-   - [ ] 组件使用示例
-   - [ ] 贡献指南
 
 ## 注意事项
 
-### 开发环境
-1. **Python版本**: 必须 >= 3.10
-2. **依赖管理**: 使用poetry，不要混用pip
-3. **数据库路径**: 确保 `output/video_info_collector/database/` 目录存在
+- Python >= 3.10；依赖管理使用项目根的 `pyproject.toml`
+- 默认数据库路径需存在父目录：`output/video_info_collector/database/`
+- 浏览器建议：Chrome 86+/Edge 86+；Safari 对 File System Access API 支持有限
+- macOS 特性：首次使用目录/文件访问可能需要授权
 
-### Streamlit特性
-1. **状态管理**: 使用 `st.session_state` 而非全局变量
-2. **重运行机制**: 每次交互都会重新运行整个脚本
-3. **缓存**: 使用 `@st.cache_data` 缓存昂贵计算
+## 已知差异/问题（与并行实现或设计说明的差异，仅罗列，不在此处改动设计文档）
 
-### 浏览器要求
-1. **推荐浏览器**: Chrome 86+, Edge 86+
-2. **不推荐**: Safari (File System Access API支持有限)
-3. **移动端**: 仅基本功能可用
+- 字段命名差异：当前入口使用的 `ui/services.py` 返回字段为 `video/file_path/file_size/duration/resolution`；而 `ui/table_renderer.py` 期望 `filename/duration/resolution/...`，导致“视频”列可能为空。`ui/streamlit/services.py` 与其同目录的渲染器字段一致，不存在该问题。
+- 查询策略差异：`design/design.md` 与 `ui/streamlit/validation.py` 要求“仅精确匹配，禁空/禁模糊”；当前入口的 `validation.py` 也为精确校验，但 `ui/services.py` 在 `video_code` 列缺失时会回退到 `filename/file_path` 的模糊匹配（实现层面与“仅精确匹配”的设计描述存在偏差）。
+- 维护 0 结果的语义差异：`ui/services.py` 在未发现可处理文件时返回“成功（空结果）”的提示；而 `ui/streamlit/services.py` 在同情形返回失败提示。
+- 导航样式差异：并行实现 `ui/streamlit/app.py` 使用侧边栏大按钮进行路由切换；当前入口页使用页内按钮与顶部栏样式更为简化。
 
-### macOS特殊问题
-1. **tkinter**: 必须使用subprocess隔离
-2. **文件权限**: 首次运行可能需要授权文件访问
-3. **安全设置**: 打包应用可能需要开发者签名
-
-## 设计规范
-
-详见 `design/design_system.md`，包括：
-- 颜色系统
-- 排版规范
-- 组件样式
-- 交互规范
+以上差异已在本 README 标注；若需统一至设计方案，请以设计文档为准并优先调整实现代码（非本文档）。
 
 ## 相关文档
 
-- [项目主README](../README.md)
-- [桌面应用文档](../README_DESKTOP.md)
-- [客户端部署文档](../README_CLIENT.md)
-- [开发指南](../DEVELOPMENT_GUIDELINES.md)
-- [术语表](../TERMINOLOGY.md)
-
-## 维护者
-
-如有问题或建议，请参考项目主README中的联系方式。
-
----
-
-**最后更新**: 2025-11-06  
-**版本**: 0.1.0  
-**状态**: 开发中
+- 项目主 README：`../README.md`
+- 设计文档：`ui/design/design.md`、`ui/design/design_system.md`
+- 术语表：`../TERMINOLOGY.md`
+- 开发指南：`../DEVELOPMENT_GUIDELINES.md`

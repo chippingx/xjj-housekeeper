@@ -28,6 +28,51 @@ except Exception as e:
 APP_TITLE = "XJJ Housekeeper"
 
 
+def run_filename_adjustment(
+    base_path: str,
+    include_subdirs: bool = True,
+    flatten_output: bool = False,
+    dry_run: bool = False,
+    conflict_resolution: str = "rename",
+    log_operations: bool = True,
+    verify_size: bool = False,
+):
+    """调用 tools.filename_formatter 执行文件名调整并返回摘要与日志行。
+
+    返回结构：
+    {
+        "summary": {"total": int, "success": int, "skipped": int, "would_skip": int, "preview": int, "errors": int},
+        "log_lines": ["status: original -> new", ...]
+    }
+    """
+    try:
+        from tools.filename_formatter.formatter import FilenameFormatter
+    except Exception as e:
+        return {"summary": {"total": 0, "success": 0, "skipped": 0, "would_skip": 0, "preview": 0, "errors": 1}, "log_lines": [f"error: import failed - {e}"]}
+
+    formatter = FilenameFormatter()
+    results = formatter.rename_in_directory(
+        base_path,
+        include_subdirs=include_subdirs,
+        flatten_output=flatten_output,
+        dry_run=dry_run,
+        conflict_resolution=conflict_resolution,
+        log_operations=log_operations,
+        verify_size=verify_size,
+    )
+
+    summary = {
+        "total": len(results),
+        "success": sum(1 for r in results if str(r.status).startswith("success")),
+        "skipped": sum(1 for r in results if str(r.status).startswith("skipped")),
+        "would_skip": sum(1 for r in results if str(r.status).startswith("would skip")),
+        "preview": sum(1 for r in results if str(r.status).startswith("preview")),
+        "errors": sum(1 for r in results if str(r.status).startswith("error")),
+    }
+    log_lines = [f"{r.status}: {r.original} -> {r.new}" for r in results]
+    return {"summary": summary, "log_lines": log_lines}
+
+
 class XJJDesktopApp:
     def __init__(self) -> None:
         self.root = tk.Tk()
@@ -301,6 +346,114 @@ class XJJDesktopApp:
             log_text.insert(tk.END, line + "\n")
             log_text.see(tk.END)
 
+        def do_filename_adjustment():
+            import threading
+            path = self.scan_dir_var.get().strip()
+            if not path:
+                messagebox.showwarning("提示", "请先选择扫描路径")
+                return
+
+            # 清理旧日志并重置状态
+            log_text.delete("1.0", tk.END)
+            status.configure(text=f"准备文件名调整: {path}")
+
+            # 显示进度条（开始前隐藏，点击开始后显示）
+            nonlocal pb_visible
+            if not pb_visible:
+                pb.pack(anchor="w")
+                pb_visible = True
+            pb.configure(value=0, maximum=100)
+
+            def worker():
+                try:
+                    from tools.filename_formatter.formatter import FilenameFormatter
+                    # 规则文件路径回退：优先使用默认 rename_rules.yaml；不存在则使用示例 rename_rules.yaml.example
+                    from pathlib import Path
+                    project_root = Path(__file__).resolve().parents[2]
+                    default_rules = project_root / "tools/filename_formatter/rename_rules.yaml"
+                    example_rules = project_root / "tools/filename_formatter/rename_rules.yaml.example"
+                    if default_rules.exists():
+                        # 覆盖最小文件大小为 1 字节，避免因默认100MB阈值导致大量跳过
+                        formatter = FilenameFormatter(default_rules_path=str(default_rules), min_file_size=1)
+                    elif example_rules.exists():
+                        formatter = FilenameFormatter(default_rules_path=str(example_rules), min_file_size=1)
+                    else:
+                        # 两者都不存在时回退到内部默认逻辑（可能打印缺失提示）
+                        formatter = FilenameFormatter(min_file_size=1)
+
+                    results = formatter.rename_in_directory(
+                        path,
+                        include_subdirs=True,
+                        flatten_output=True,   # 默认扁平化输出：子目录文件移动到根目录
+                        dry_run=False,
+                        conflict_resolution="rename",
+                        log_operations=True,
+                        verify_size=False,
+                    )
+                except Exception as e:
+                    results = []
+                    err = str(e)
+                    self.root.after(0, lambda: append_log(f"error: {err}"))
+
+                def finish():
+                    # 用结果数量设置进度，并逐条延时输出日志（人类友好节奏）
+                    total = len(results)
+                    pb.configure(maximum=max(total, 1), value=0)
+
+                    # 统计与待打印列表（与开始处理话术保持一致：status: original -> new）
+                    success = skipped = would_skip = preview = errors = 0
+                    to_print: list[str] = []
+                    for r in results:
+                        s = str(r.status)
+                        if s.startswith("success"):
+                            # 与 CLI 保持一致的成功话术
+                            status_info = ""
+                            if "(size verified)" in s:
+                                status_info = " [大小已验证]"
+                            to_print.append(f"success: {r.original} -> {r.new}{status_info}")
+                            success += 1
+                        elif s == "preview: would rename":
+                            to_print.append(f"preview: {r.original} -> {r.new}")
+                            preview += 1
+                        elif s.startswith("skipped"):
+                            detail = s.split(": ", 1)[1] if ": " in s else s
+                            to_print.append(f"skipped: {detail}: {r.original} -> {r.new}")
+                            skipped += 1
+                        elif s.startswith("would skip"):
+                            # 兼容旧式“would skip”话术
+                            to_print.append(f"would skip: {r.original} -> {r.new}")
+                            would_skip += 1
+                        elif s.startswith("error"):
+                            to_print.append(f"error: {r.original} -> {r.new} ({s})")
+                            errors += 1
+
+                    # 打印节奏（默认 600ms，可通过环境变量 HUMAN_LOG_INTERVAL_MS 调整到 500-1000ms）
+                    try:
+                        interval_ms = int(os.getenv("HUMAN_LOG_INTERVAL_MS", "600"))
+                    except Exception:
+                        interval_ms = 600
+
+                    # 逐行打印并更新进度
+                    def schedule_print(idx: int):
+                        if idx < len(to_print):
+                            append_log(to_print[idx])
+                            pb.configure(value=min(idx + 1, total))
+                            status.configure(text=f"正在调整 {min(idx + 1, total)}/{total} …")
+                            self.root.after(interval_ms, lambda: schedule_print(idx + 1))
+                        else:
+                            # 完成后隐藏进度条
+                            pb.pack_forget()
+                            nonlocal pb_visible
+                            pb_visible = False
+                            status.configure(text=f"完成：总计 {total}，成功 {success}，跳过 {skipped}，预览 {preview}，错误 {errors}")
+
+                    # 开始调度打印
+                    schedule_print(0)
+
+                self.root.after(0, finish)
+
+            threading.Thread(target=worker, daemon=True).start()
+
         def do_maintain():
             import threading
             path = self.scan_dir_var.get().strip()
@@ -379,7 +532,27 @@ class XJJDesktopApp:
 
             threading.Thread(target=worker, daemon=True).start()
 
-        tk.Button(container, text="开始维护", command=do_maintain, bg=self.colors["white"], fg=self.colors["gray800"], relief=tk.GROOVE).pack(anchor="w")
+        # 按钮同一行布局
+        btn_row = tk.Frame(container, bg=self.colors["white"]) 
+        btn_row.pack(anchor="w", pady=4)
+
+        tk.Button(
+            btn_row,
+            text="文件名调整",
+            command=do_filename_adjustment,
+            bg=self.colors["white"],
+            fg=self.colors["gray800"],
+            relief=tk.GROOVE,
+        ).pack(side=tk.LEFT, padx=6)
+
+        tk.Button(
+            btn_row, 
+            text="开始维护", 
+            command=do_maintain, 
+            bg=self.colors["white"], 
+            fg=self.colors["gray800"], 
+            relief=tk.GROOVE
+        ).pack(side=tk.LEFT, padx=6)
 
     def _on_table_double_click(self, table: ttk.Treeview, event: tk.Event):
         """表格双击事件处理"""

@@ -586,6 +586,26 @@ RENAME_RULES_PATH=config/rename_rules.yaml  # 不存在的路径
 - 同时存在 `tools/filename_formatter/rename_rules.yaml` 和 `config/rename_rules.yaml`
 - 导致配置不一致和维护困难
 
+### 4. 重命名规则配置强制规定（不删除、不硬编码）
+**适用范围**: `tools/filename_formatter/rename_rules.yaml`
+
+**强制要求**:
+- ✅ 规则的唯一来源是 `rename_rules.yaml`（或 `RENAME_RULES_PATH` 指向的同等 YAML 文件）
+- ✅ 加载顺序：优先使用环境变量 `RENAME_RULES_PATH`；未设置时使用默认 `tools/filename_formatter/rename_rules.yaml`
+- ❌ 禁止删除或移除 `rename_rules.yaml`
+- ❌ 禁止将配置内容拷贝到代码中（例如在 `formatter.py` 或其他模块中硬编码规则）
+- ❌ 禁止以任何方式在代码中动态注入或合并“默认规则”以替代 YAML 配置
+- ❌ 禁止通过修改代码来“修复”测试中的规则数量与内容差异
+
+**正确做法**:
+- 需要更改规则时，仅修改 YAML 文件（并记录变更原因）；代码保持对 YAML 的纯粹加载
+- 测试用例需要替换规则时，使用 `monkeypatch.setenv('RENAME_RULES_PATH', ...)` 指向临时 YAML，不创建新配置目录
+- 遇到规则加载问题（如 `No module named 'yaml'`），修复环境或依赖，而不是改动核心代码
+
+**验证要求**:
+- 每次涉及规则变更或加载逻辑的任务，必须运行完整的 `filename_formatter` 测试套件并通过
+- 对于 UI/CLI 的日志和展示节奏的改动，必须保持核心规则加载逻辑不变
+
 ---
 
 ## 📁 目录结构规范

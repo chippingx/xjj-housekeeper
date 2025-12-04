@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import time
 from typing import List
 
 from dotenv import load_dotenv
@@ -85,18 +86,28 @@ def main(argv: List[str] = None) -> int:
             print("🔍 预览模式 - 以下是将要执行的操作：")
             print("=" * 50)
         
+        # 可选慢速日志输出（避免一次性刷屏）：通过环境变量 HUMAN_LOG_INTERVAL_SECS 控制节奏
+        slow_secs = 0.0
+        try:
+            slow_secs = float(os.getenv("HUMAN_LOG_INTERVAL_SECS", "0"))
+        except Exception:
+            slow_secs = 0.0
+
         for r in results:
-             if r.status.startswith("success"):
-                 status_info = ""
-                 if "(size verified)" in r.status:
-                     status_info += " [大小已验证]"
-                 print(f"success: {r.original} -> {r.new}{status_info}")
-             elif r.status == "preview: would rename":
-                 print(f"preview: {r.original} -> {r.new}")
-             elif r.status.startswith("skipped"):
-                 print(f"skipped: {r.status.split(': ', 1)[1]}: {r.original} -> {r.new}")
-             else:
-                 print(f"error: {r.original} -> {r.new} ({r.status})")
+            if r.status.startswith("success"):
+                status_info = ""
+                if "(size verified)" in r.status:
+                    status_info += " [大小已验证]"
+                print(f"success: {r.original} -> {r.new}{status_info}")
+            elif r.status == "preview: would rename":
+                print(f"preview: {r.original} -> {r.new}")
+            elif r.status.startswith("skipped"):
+                print(f"skipped: {r.status.split(': ', 1)[1]}: {r.original} -> {r.new}")
+            else:
+                print(f"error: {r.original} -> {r.new} ({r.status})")
+
+            if slow_secs > 0:
+                time.sleep(slow_secs)
 
         print("\n统计:")
         print(f"- 总计: {total}")

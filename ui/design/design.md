@@ -1,14 +1,14 @@
-# UI 设计文档（Streamlit 本地客户端）
+# UI 设计文档（Tkinter 桌面客户端）
 
-> 版本：v0.1 草案  
-> 日期：2025-11-04  
+> 版本：v0.2（基于 tkinter 实现对齐）  
+> 日期：2025-11-08  
 > 面向平台：macOS、Windows（跨平台，本地运行）
 
 ---
 
 ## 1. 背景与目标
 
-- 目标：构建一个基于 Streamlit 的本地客户端，提供“扫描目录→生成并人工校验 CSV→合并入数据库→查询/统计→导出”的完整工作流可视化与可控执行，严格遵循项目的“无迁移无兼容”与文档安全规范。
+- 目标：构建一个基于 Tkinter 的本地桌面客户端，提供“扫描目录→生成并人工校验 CSV→合并入数据库→查询/统计→导出”的完整工作流可视化与可控执行，严格遵循项目的“无迁移无兼容”与文档安全规范。
 - 参考流程：详见 `debug/video_info_collector/CLI_DEMO.md` 中的推荐工作流程。
 - 使用场景：在本机以图形化方式管理视频信息库，无需部署远程 Web 服务，不对外暴露接口，强调安全与可控。
 - 非目标：
@@ -19,12 +19,11 @@
 ## 2. 技术栈与运行模式
 
 - 技术栈：
-  - 前端/UI：当前阶段以 `ui/design` 下的高保真静态页面为单一信源；生成页面代码时再选择具体框架（建议 Streamlit 或本地前端 + Python 服务），严格按设计系统与高保真映射实现。
-  - 后端/数据：沿用 `tools/video_info_collector` 与 SQLite；UI 层的调用接口在生成阶段通过轻薄 `services` 封装。
-  - 封装：`services` 层在生成阶段落地，负责与现有 Python 模块或 CLI 对接。
+  - 前端/UI：使用 Python 标准库 Tkinter 构建桌面界面，视觉与交互遵循 `ui/design` 下的高保真与 `design_system.md`。
+  - 后端/数据：沿用 `tools/video_info_collector` 与 SQLite；UI 层通过轻薄 `services` 封装访问现有能力。
+  - 封装：`ui/services.py` 提供查询与维护入口，避免 UI 直接耦合底层实现。
 - 运行模式：
-  - 当前阶段：本地浏览器直接打开 `ui/design` 下的高保真静态页进行预览与评审。
-  - 生成阶段：本地单机 UI（框架待定），仅绑定 `localhost`；不暴露到外网；所有文件读写基于本机路径与既有约定。
+  - 本地单机 UI（仅绑定本地环境）；不暴露到外网；所有文件读写基于本机路径与既有约定。
 - 跨平台策略：
   - 路径与分隔符兼容（`os.path`/`pathlib`）；
   - 依赖检测（FFmpeg/ffprobe、SQLite）并提供友好提示；
@@ -34,30 +33,36 @@
 
 ```
 ui/
-└── design/
-    ├── index.html                             # 交互原型（查询 ↔ 维护入口）
-    ├── hifi-desktop.html                      # 查询页（桌面 1440×900）
-    ├── hifi-mobile.html                       # 查询页（移动 375×667）
-    ├── hifi-desktop-maintain.html             # 维护页（桌面）
-    ├── hifi-mobile-maintain.html              # 维护页（移动）
-    ├── hifi-desktop-maintain-processing.html  # 维护流程 · 处理中（桌面）
-    ├── hifi-desktop-maintain-complete.html    # 维护流程 · 完成（桌面）
-    ├── hifi-mobile-maintain-processing.html   # 维护流程 · 处理中（移动）
-    ├── hifi-mobile-maintain-complete.html     # 维护流程 · 完成（移动）
-    ├── design_system.md                       # 设计系统（样式与组件规范）
-    └── design.md                              # 设计文档（流程与实现说明）
+├── design/                                   # 视觉/交互规范与高保真
+│   ├── index.html
+│   ├── hifi-desktop.html
+│   ├── hifi-mobile.html
+│   ├── hifi-desktop-maintain.html
+│   ├── hifi-mobile-maintain.html
+│   ├── hifi-desktop-maintain-processing.html
+│   ├── hifi-desktop-maintain-complete.html
+│   ├── hifi-mobile-maintain-processing.html
+│   ├── hifi-mobile-maintain-complete.html
+│   ├── design_system.md
+│   └── design.md (本文件)
+├── tkinter/                                  # 桌面端实现
+│   └── app.py                                # Tkinter 入口（水平顶栏：查询/维护）
+└── （根目录实现）
+    ├── app.py                                # 旧入口（逐步让位于 tkinter）
+    ├── services.py                           # 服务封装（查询/维护）
+    ├── table_renderer.py                     # 表格渲染（若存在的 HTML 渲染与 Tk UI 语义对齐）
+    └── validation.py                         # 输入校验（与 UI 行为一致）
 ```
 
-- 页面职责：
-  - 查询页：精确匹配查询、空态与结果表展示、列换行策略与交互约束。
-  - 维护页：四行表单结构与主按钮，流程状态包含处理中遮罩与完成弹框。
-  - 顶部入口标签：查询页为“维护视频数据”，维护页为“返回查询”。
+- 页面职责（对齐 tkinter 实现）：
+  - 查询页：支持按 `video_code` 模糊匹配；禁止空搜索；输入即搜（每输入一个字符即时触发查询）；空态与结果表展示；列换行策略与交互约束。
+  - 维护页：四行表单结构与主按钮，流程状态包含处理中进度与完成摘要。
+  - 顶部导航：顶栏水平两个入口按钮“查询/维护”，高亮当前路由。
 
 - 进程模型：
-  - 当前阶段为静态预览与评审；不包含可运行业务代码。
-  - 实现阶段：UI 框架待定；IO 通过 `services` 与现有模块执行；避免长期阻塞（必要时使用轻量线程/异步提示）。
+  - UI 线程负责渲染；维护任务在工作线程中执行，进度通过标准输出解析并回显到 UI；避免长期阻塞。
 - 数据与配置来源：
-  - 默认数据库与路径约定沿用现有 CLI/模块；具体接入在生成阶段落地。
+  - 默认数据库与路径约定沿用现有 CLI/模块；具体接入在 `ui/services.py` 落地。
 
 ## 4. 数据流与关键交互（映射推荐工作流程）
 
@@ -81,25 +86,36 @@ ui/
 - 执行合并，显示进度与统计（插入/更新/标记缺失/替换/重复）；
 - 记录合并历史（`merge_history`）。
 
-5) 查询视频（按 `video_code`）：
-- 单个或多个 code（大小写不敏感）；
-- 显示关键字段（code、文件大小、逻辑路径等）。
+5) 查询视频（按 `video_code` 模糊）：
+- 关键词为单个字符串，按 `video_code` 子串匹配；大小写不敏感；禁止空字符串触发搜索；输入即搜（每次变更即触发）。
+- 结果字段集合（与 tkinter 渲染对齐）：
+  - `video`：首列展示标签（优先 `video_code`，缺失则回退 `filename`）。
+  - `file_path`：文件绝对路径；表格中展示为目录路径（`Path(file_path).parent`）。
+  - `file_size`：格式化为 `12M` 或 `1.23G`。
+  - `duration`：`HH:MM:SS` 或等效格式化时长。
+  - `resolution`：如 `1920x1080`。
+- 表头与对齐（桌面）：
+  - 列顺序：`视频` | `路径` | `大小` | `时长` | `分辨率`；
+  - `视频`、`路径`列左对齐，其他列右对齐；`路径`列较宽（约 360px）。
+- 交互：
+  - 双击 `路径` 列：打开所在目录；
+  - 双击其他列：使用系统默认播放器打开视频；
+  - 右键：显示系统播放器菜单（如 QuickTime、VLC），可选择指定播放器播放。
 
-6) 统计分析：
+6) 统计分析（规划）：
 - 基本统计、按标签/分辨率/时长分布、增强统计；
 - 表格与图表展示。
 
-7) 导出与简化导出：
+7) 导出与简化导出（规划）：
 - 导出 CSV/JSON；
-- 简化导出（仅 filename_without_ext、filesize、logical_path）；
-- 输出到指定文件或默认命名。
+- 简化导出（仅 filename_without_ext、filesize、logical_path）。
 
 8) 诊断与调试：
 - `scan_history` / `merge_history` 快速查看；
 - DB 体检（表存在性、记录数、索引检查）；
 - 常见问题提示与命令建议。
 
-9) 设置与偏好：
+9) 设置与偏好（规划）：
 - 默认数据库路径、默认标签与逻辑路径模板；
 - FFmpeg 可用性检测与安装指引；
 - Git hooks 安装与状态检查（调用 `./setup_hooks.sh`）。
@@ -151,8 +167,8 @@ ui/
 - 验证 `merge_history` 记录增加。
 
 6) Step 06 查询（`test_step_06_search_by_code.py`）
-- 按多个 `video_code` 查询，返回期望字段集合；
-- 大小写不敏感与空格/逗号分隔解析正确。
+- 按 `video_code` 模糊匹配返回期望字段集合；
+- 大小写不敏感；空输入不触发；输入即搜场景下稳定返回。
 
 7) Step 07 统计（`test_step_07_stats_basic.py`）
 - 基本统计与标签/分辨率/时长分组统计返回正确结构；
@@ -195,19 +211,17 @@ ui/
 ## 8. 依赖与安装
 
 - 运行依赖：
-  - `streamlit`（UI）
+  - Python 标准库 `tkinter`（UI）
   - `ffmpeg`/`ffprobe`（元数据提取）
   - `sqlite3`（标准库）
 - 安装指引：
   - macOS：`brew install ffmpeg`
   - Windows：下载 FFmpeg 二进制并配置 PATH；
-- 后续将在 `pyproject.toml` 添加 `streamlit` 依赖（本设计阶段不改代码）。
 
 ## 9. 配置项与默认值
 
 - 默认数据库：`output/video_info_collector/database/video_database.db`
 - 默认扫描参数：扩展名集合、是否递归、标签与逻辑路径模板；
-- 端口与绑定地址：默认随机端口、绑定 `localhost`；
 - 所有用户偏好仅存本地，不提交到版本控制。
 
 ## 10. 术语与一致性
@@ -262,33 +276,3 @@ python -m tools.video_info_collector --merge temp_movies.csv --database projects
 ---
 
 > 注：本设计文档为实现前提与评审依据，后续实现与测试需严格对齐本文档；任何偏离需在文档中先修改并获批准（遵守“设计文档至上原则”）。
-
----
-
-## 附录：产品流程总览（简表）
-
-- 01 数据库初始化：输入数据库路径、确认“yes”、结构验证、日志窗口。
-- 02 扫描到 CSV：目录、标签、逻辑路径、递归/扩展名、进度与示例预览、输出位置。
-- 03 CSV 校验与预览：选择 CSV、规则选择、校验报告、分页/筛选/搜索的预览表、导出校验报告。
-- 04 合并到数据库：选择 CSV/DB、强制合并选项、进度条、合并统计（新增/更新/缺失/替换/重复）、合并历史与报告导航。
-- 05 查询与统计：按 `video_code` 查询关键字段；统计类型选择（基本/标签/分辨率/时长/增强）并展示图表/表格。
-- 06 导出与简化导出：选择数据库与格式（csv/json）、输出文件；简化导出为文本（`filename_without_ext filesize logical_path`）。
-- 07 诊断与日志：快捷查询 `scan_history/merge_history/video_info`、体检（表/记录数/索引）、常见问题与命令建议、操作日志窗口。
-- 08 设置与偏好：默认数据库路径、默认标签与逻辑路径模板、FFmpeg 检测、Git hooks 安装、保存设置。
-
-## 附录：组件映射参考（Streamlit）
-
-- 输入类：`st.text_input`、`st.text_area`、自定义文件/目录选择器。
-- 控件类：`st.checkbox`、`st.selectbox`、`st.multiselect`、`st.button`。
-- 展示类：`st.table`、`st.dataframe`、`st.metric`、`st.progress`、`st.chart`。
-- 布局：`st.sidebar`（全局导航）、`st.tabs`（查询/统计分栏）、栅格布局（`columns`）。
-- 状态：`st.session_state` 保存 DB 路径、标签、逻辑路径等。
-
-## 与高保真与设计系统的对齐声明
-
-- 查询约束与交互：仅支持精确匹配；禁用空查询与模糊查询；输入不符时禁用查询按钮并提示；支持回车触发；初始进入查询页自动聚焦搜索框；空态容器显示“请输入关键词进行查询”并隐藏结果表。
-- 表格列换行策略：`视频`与`大小`列不换行（`white-space: nowrap`）；`路径`列允许换行并启用 `word-break: break-all`，保证小屏可读性；启用斑马线与行悬停。
-- 维护页表单与状态：四行结构（目录输入+选择目录、标签输入、逻辑路径输入、开始维护），桌面 `.form-row { display:flex; gap:8px; align-items:center; margin:10px 0; }`；点击“开始维护”显示全屏遮罩（不可关闭、锁定滚动），完成后弹框“维护完成”（支持 `Esc` 关闭并返回查询，解除滚动锁定）。
-- 移动端适配：设备框 375×667；使用单列布局，按钮置于输入下方；维护页可隐藏“逻辑路径”输入；弹框宽度与间距做最小化适配，保持与桌面一致的视觉基调（详见高保真页面）。
-
-> 注：为精简文档与避免信息分散，原“原型草案”中的通用流程与组件映射信息已并入本设计文档的附录；不再保留单独草案文件。
