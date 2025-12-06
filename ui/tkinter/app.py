@@ -627,11 +627,11 @@ class XJJDesktopApp:
                             to_print.append(f"error: {r.original} -> {r.new} ({s})")
                             errors += 1
 
-                    # 打印节奏（默认 600ms，可通过环境变量 HUMAN_LOG_INTERVAL_MS 调整到 500-1000ms）
+                    # 打印节奏（默认 100ms，可通过环境变量 HUMAN_LOG_INTERVAL_MS 调整）
                     try:
-                        interval_ms = int(os.getenv("HUMAN_LOG_INTERVAL_MS", "600"))
+                        interval_ms = int(os.getenv("HUMAN_LOG_INTERVAL_MS", "100"))
                     except Exception:
-                        interval_ms = 600
+                        interval_ms = 100
 
                     # 逐行打印并更新进度
                     def schedule_print(idx: int):

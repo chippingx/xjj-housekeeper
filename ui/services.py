@@ -240,7 +240,14 @@ class VideoService:
             return []
     
     def start_maintain(self, path: str, labels: Optional[str] = None, logical_path: Optional[str] = None) -> Dict[str, any]:
-        """开始维护视频数据"""
+        """开始维护视频数据。
+
+        当前实现：
+        - 使用增强扫描器对指定目录进行完整扫描与智能合并
+        - 扫描完成后，根据目录结构自动为视频打标签：
+          - 当扫描根目录下存在子目录时，使用“首层子目录名”作为标签
+          - 当直接扫描某个叶子目录时，使用该目录名作为标签
+        """
         try:
             self._ensure_storage()
             
@@ -306,6 +313,15 @@ class VideoService:
                     'files_skipped': 0,
                     'errors': 0
                 }
+
+            # 扫描成功后，根据目录结构自动打标签
+            try:
+                self._apply_folder_based_tags(path)
+            except Exception as tag_exc:
+                # 自动标签失败不影响主流程，只记录错误
+                self.error_handler.handle_database_error(
+                    f"应用目录标签失败: {tag_exc}", self.db_path, "apply_folder_tags"
+                )
             
             # 构建详细的成功消息
             message_parts = []
@@ -334,6 +350,61 @@ class VideoService:
                 'success': False,
                 'message': error_msg
             }
+
+    def _apply_folder_based_tags(self, root_path: str) -> None:
+        """根据目录结构为扫描到的视频自动打标签。
+
+        约定：
+        - 以维护入口选择的目录作为扫描根目录
+        - 对于位于根目录下的多级子目录中的视频，以“首层子目录名”作为标签
+          例如：/root/标签A/video1.mp4, /root/标签B/sub/video2.mp4
+          在扫描根为 /root 时，两条记录分别打上“标签A”、“标签B”标签
+        - 如果直接扫描某个叶子目录（该目录下直接放视频），则使用该目录名作为标签
+        """
+        if not self.storage:
+            return
+
+        root_abs = os.path.abspath(root_path)
+        # 确保以路径分隔符结尾，避免 /foo 与 /foobar 前缀混淆
+        root_prefix = os.path.join(root_abs, "")
+
+        cursor = self.storage.connection.cursor()
+        cursor.execute(
+            "SELECT id, file_path FROM video_info WHERE file_path LIKE ?",
+            (root_prefix + "%",),
+        )
+        rows = cursor.fetchall()
+        if not rows:
+            return
+
+        for row in rows:
+            video_id = row["id"] if isinstance(row, dict) else row["id"]
+            file_path = row["file_path"] if isinstance(row, dict) else row["file_path"]
+            if not file_path:
+                continue
+
+            try:
+                rel_path = os.path.relpath(file_path, root_abs)
+            except Exception:
+                continue
+
+            parts = rel_path.split(os.sep)
+            if len(parts) >= 2:
+                tag = parts[0]
+            else:
+                # 当文件直接位于扫描根目录下时，使用根目录名作为标签
+                tag = os.path.basename(root_abs)
+
+            tag = (tag or "").strip()
+            if not tag:
+                continue
+
+            cursor.execute(
+                "INSERT OR IGNORE INTO video_tags (video_id, tag) VALUES (?, ?)",
+                (video_id, tag),
+            )
+
+        self.storage.connection.commit()
 
 
 # 创建全局服务实例
