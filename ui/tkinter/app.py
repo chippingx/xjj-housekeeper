@@ -97,6 +97,9 @@ class XJJDesktopApp:
             "selected_border": "#C7D2FE",
         }
 
+        # 维护页“选择目录”对话框的最后一次停留目录
+        self._last_scan_dir: str | None = None
+
         self._init_styles()
         self._build_layout()
         self._build_top_nav()
@@ -446,9 +449,21 @@ class XJJDesktopApp:
         self._attach_entry_context_menu(entry)
 
         def choose_dir():
-            d = filedialog.askdirectory()
+            current = (self.scan_dir_var.get() or "").strip()
+            initialdir = None
+            if current and os.path.isdir(current):
+                initialdir = current
+            elif self._last_scan_dir and os.path.isdir(self._last_scan_dir):
+                initialdir = self._last_scan_dir
+
+            if initialdir:
+                d = filedialog.askdirectory(initialdir=initialdir)
+            else:
+                d = filedialog.askdirectory()
+
             if d:
                 self.scan_dir_var.set(d)
+                self._last_scan_dir = d
 
         tk.Button(form, text="选择目录", command=choose_dir, bg=self.colors["white"], fg=self.colors["gray800"], relief=tk.GROOVE).pack(side=tk.LEFT, padx=8)
 
