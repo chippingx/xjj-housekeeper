@@ -233,21 +233,32 @@ class XJJDesktopApp:
         form = tk.Frame(container, bg=self.colors["bg"]) 
         form.pack(fill=tk.X)
 
-        tk.Label(form, text="视频码", bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 12)).pack(side=tk.LEFT)
-        self.query_var = tk.StringVar()
+        self.query_placeholder = "视频号/标签"
+        self.query_var = tk.StringVar(value=self.query_placeholder)
         entry = tk.Entry(form, textvariable=self.query_var, width=40)
         entry.pack(side=tk.LEFT, padx=8)
         self._attach_entry_context_menu(entry)
 
+        def _on_query_focus_in(_event):
+            if self.query_var.get() == self.query_placeholder:
+                self.query_var.set("")
+
+        def _on_query_focus_out(_event):
+            if not self.query_var.get().strip():
+                self.query_var.set(self.query_placeholder)
+
+        entry.bind("<FocusIn>", _on_query_focus_in)
+        entry.bind("<FocusOut>", _on_query_focus_out)
+
         # 结果表格（提前创建，避免输入回调引用未准备好的表格导致渲染阻塞）
         table_container = tk.Frame(container, bg=self.colors["bg"]) 
         table_container.pack(fill=tk.BOTH, expand=True, pady=12)
-        columns = ("video", "file_path", "file_size", "duration", "resolution")
+        columns = ("video", "tags", "file_path", "file_size", "duration", "resolution")
         table = ttk.Treeview(table_container, columns=columns, show="headings")
-        left_cols = {"video", "file_path"}
+        left_cols = {"video", "tags", "file_path"}
         right_cols = {"file_size", "duration", "resolution"}
         header_texts = {}
-        for col, text in zip(columns, ("视频", "路径", "大小", "时长", "分辨率")):
+        for col, text in zip(columns, ("视频", "标签", "路径", "大小", "时长", "分辨率")):
             header_texts[col] = text
             # 表头对齐 + 点击排序
             table.heading(
@@ -257,15 +268,23 @@ class XJJDesktopApp:
                 command=lambda c=col: self._sort_table(table, c),
             )
             # 单元格对齐与列宽
-            width = 360 if col == "file_path" else 150
+            if col == "file_path":
+                width = 320
+            elif col == "tags":
+                width = 180
+            else:
+                width = 150
             table.column(col, width=width, anchor="w" if col in left_cols else "e")
         # 保存原始表头文本，排序时用于叠加箭头
         table._header_texts = header_texts
         table.pack(fill=tk.BOTH, expand=True)
 
-        # 输入即搜（模糊匹配 video_code）
+        # 输入即搜（模糊匹配 视频号/标签）
         def do_search_live():
             keyword = self.query_var.get().strip()
+            if not keyword or keyword == self.query_placeholder:
+                self._render_table(table, [])
+                return
             results = search_videos(keyword) or []
             self._render_table(table, results)
 
@@ -322,16 +341,43 @@ class XJJDesktopApp:
         for item in table.get_children():
             table.delete(item)
         if not rows:
-            # 空状态占位
-            table.insert("", tk.END, values=("暂无数据", "", "", "", ""))
+            # 空状态占位（兼容不同列数，至少首列给提示）
+            columns = list(getattr(table, "columns", ())) or ["video"]
+            empty_values = [""] * len(columns)
+            empty_values[0] = "暂无数据"
+            table.insert("", tk.END, values=empty_values)
             return
+
+        try:
+            columns = list(table["columns"])
+        except Exception:
+            columns = ["video", "file_path", "file_size", "duration", "resolution"]
+
         for r in rows:
             file_path = r.get("file_path")
             dir_path = Path(file_path).parent if file_path else ""
-            item_id = table.insert(
-                "", tk.END,
-                values=(r.get("video"), str(dir_path), r.get("file_size"), r.get("duration"), r.get("resolution"))
-            )
+            video_label = r.get("video") or r.get("filename") or ""
+            tags_label = r.get("tags") or r.get("labels") or ""
+
+            # 根据表格自身列定义动态构造行数据，保证兼容旧测试
+            values: list[str] = []
+            for col in columns:
+                if col in ("video", "filename"):
+                    values.append(video_label)
+                elif col in ("tags", "labels"):
+                    values.append(tags_label)
+                elif col == "file_path":
+                    values.append(str(dir_path))
+                elif col == "file_size":
+                    values.append(r.get("file_size", ""))
+                elif col == "duration":
+                    values.append(r.get("duration", ""))
+                elif col == "resolution":
+                    values.append(r.get("resolution", ""))
+                else:
+                    values.append(str(r.get(col, "")))
+
+            item_id = table.insert("", tk.END, values=values)
             self._row_cache[item_id] = r
 
     def _sort_table(self, table: ttk.Treeview, column_key: str) -> None:

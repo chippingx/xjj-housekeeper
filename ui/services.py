@@ -61,12 +61,16 @@ class VideoService:
             self.merge_manager = SmartMergeManager(self.storage)
     
     def search_videos(self, keyword: str) -> List[Dict[str, str]]:
-        """搜索视频（基于视频code的模糊匹配，支持输入即搜）"""
+        """搜索视频（支持按视频码和标签模糊匹配，输入即搜）。"""
         try:
             self._ensure_storage()
 
             # 空或非法输入直接返回空结果，便于“输入即搜”体验
-            if not isinstance(keyword, str) or keyword.strip() == "":
+            if not isinstance(keyword, str):
+                return []
+
+            search_term = keyword.strip()
+            if search_term == "":
                 return []
 
             cursor = self.storage.connection.cursor()
@@ -74,33 +78,79 @@ class VideoService:
             cursor.execute("PRAGMA table_info(video_info)")
             columns = [col[1] for col in cursor.fetchall()]
 
+            # 检查是否存在标签表，避免早期库报错
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='video_tags'"
+            )
+            has_video_tags = cursor.fetchone() is not None
+
+            like_keyword = f"%{search_term}%"
+
             if 'video_code' in columns:
-                cursor.execute(
-                    """
-                    SELECT video_code, filename, file_path, file_size, duration_formatted, resolution
-                    FROM video_info
-                    WHERE video_code LIKE ?
-                    ORDER BY updated_time DESC
-                    LIMIT 100
-                    """,
-                    (f"%{keyword}%",)
-                )
+                if has_video_tags:
+                    # 优先按视频码匹配，同时支持按标签关键字匹配
+                    cursor.execute(
+                        """
+                        SELECT id, video_code, filename, file_path, file_size, duration_formatted, resolution
+                        FROM video_info
+                        WHERE video_code LIKE ?
+                           OR id IN (
+                                SELECT video_id
+                                FROM video_tags
+                                WHERE tag LIKE ?
+                           )
+                        ORDER BY updated_time DESC
+                        LIMIT 100
+                        """,
+                        (like_keyword, like_keyword),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        SELECT id, video_code, filename, file_path, file_size, duration_formatted, resolution
+                        FROM video_info
+                        WHERE video_code LIKE ?
+                        ORDER BY updated_time DESC
+                        LIMIT 100
+                        """,
+                        (like_keyword,),
+                    )
             else:
-                cursor.execute(
-                    """
-                    SELECT NULL AS video_code, filename, file_path, file_size, duration_formatted, resolution
-                    FROM video_info
-                    WHERE filename LIKE ? OR file_path LIKE ?
-                    ORDER BY updated_time DESC
-                    LIMIT 100
-                    """,
-                    (f"%{keyword}%", f"%{keyword}%")
-                )
+                if has_video_tags:
+                    cursor.execute(
+                        """
+                        SELECT id, NULL AS video_code, filename, file_path, file_size, duration_formatted, resolution
+                        FROM video_info
+                        WHERE filename LIKE ?
+                           OR file_path LIKE ?
+                           OR id IN (
+                                SELECT video_id
+                                FROM video_tags
+                                WHERE tag LIKE ?
+                           )
+                        ORDER BY updated_time DESC
+                        LIMIT 100
+                        """,
+                        (like_keyword, like_keyword, like_keyword),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        SELECT id, NULL AS video_code, filename, file_path, file_size, duration_formatted, resolution
+                        FROM video_info
+                        WHERE filename LIKE ? OR file_path LIKE ?
+                        ORDER BY updated_time DESC
+                        LIMIT 100
+                        """,
+                        (like_keyword, like_keyword),
+                    )
 
             return self._rows_to_results(cursor.fetchall())
 
         except Exception as e:
-            self.error_handler.handle_database_error(f"搜索视频失败: {e}", self.db_path, "search")
+            self.error_handler.handle_database_error(
+                f"搜索视频失败: {e}", self.db_path, "search"
+            )
             return []
 
     def _rows_to_results(self, rows) -> List[Dict[str, str]]:
@@ -118,9 +168,26 @@ class VideoService:
             else:
                 file_size_formatted = "未知"
 
+            # 统一 UI 字段：首列展示视频码，缺失时回退文件名
             video_label = row['video_code'] if row['video_code'] else row['filename']
+
+            # 聚合标签信息（video_tags 多对多关系）
+            tags_label = ""
+            try:
+                video_id = row.get('id') if isinstance(row, dict) else row['id']
+            except Exception:
+                video_id = None
+            try:
+                if video_id is not None and hasattr(self.storage, 'get_video_tags'):
+                    tags = self.storage.get_video_tags(video_id) or []
+                    if tags:
+                        tags_label = ", ".join(t.strip() for t in tags if t and t.strip())
+            except Exception:
+                tags_label = ""
+
             results.append({
                 'video': video_label,
+                'tags': tags_label,
                 'file_path': row['file_path'],
                 'file_size': file_size_formatted,
                 'duration': row['duration_formatted'],
@@ -141,7 +208,7 @@ class VideoService:
             candidate_limit = max(limit * 5, limit)
             cursor.execute(
                 """
-                SELECT video_code, filename, file_path, file_size, duration_formatted, resolution
+                SELECT id, video_code, filename, file_path, file_size, duration_formatted, resolution
                 FROM video_info
                 ORDER BY RANDOM()
                 LIMIT ?
