@@ -15,7 +15,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 try:
-    from ui.services import search_videos, start_maintain
+    from ui.services import search_videos, start_maintain, random_videos
 except Exception as e:
     print(f"导入服务失败: {e}")
     # 提供降级占位，避免启动失败
@@ -23,6 +23,8 @@ except Exception as e:
         return []
     def start_maintain(path: str, labels: str = None, logical_path: str = None):
         return {"success": False, "message": "服务不可用"}
+    def random_videos(limit: int = 20, ensure_accessible: bool = True):
+        return []
 
 
 APP_TITLE = "XJJ Housekeeper"
@@ -241,12 +243,21 @@ class XJJDesktopApp:
         table = ttk.Treeview(table_container, columns=columns, show="headings")
         left_cols = {"video", "file_path"}
         right_cols = {"file_size", "duration", "resolution"}
+        header_texts = {}
         for col, text in zip(columns, ("视频", "路径", "大小", "时长", "分辨率")):
-            # 表头对齐
-            table.heading(col, text=text, anchor="w" if col in left_cols else "e")
+            header_texts[col] = text
+            # 表头对齐 + 点击排序
+            table.heading(
+                col,
+                text=text,
+                anchor="w" if col in left_cols else "e",
+                command=lambda c=col: self._sort_table(table, c),
+            )
             # 单元格对齐与列宽
             width = 360 if col == "file_path" else 150
             table.column(col, width=width, anchor="w" if col in left_cols else "e")
+        # 保存原始表头文本，排序时用于叠加箭头
+        table._header_texts = header_texts
         table.pack(fill=tk.BOTH, expand=True)
 
         # 输入即搜（模糊匹配 video_code）
@@ -268,6 +279,22 @@ class XJJDesktopApp:
         # 回车直接触发查询
         entry.bind("<Return>", lambda e: do_search())
         tk.Button(form, text="搜索", command=do_search, bg=self.colors["white"], fg="#000000", relief=tk.GROOVE).pack(side=tk.LEFT, padx=8)
+
+        def do_random_pick():
+            try:
+                results = random_videos(limit=20, ensure_accessible=True) or []
+            except TypeError:
+                results = random_videos() or []
+            self._render_table(table, results)
+
+        tk.Button(
+            form,
+            text="随机挑选",
+            command=do_random_pick,
+            bg=self.colors["white"],
+            fg="#000000",
+            relief=tk.GROOVE,
+        ).pack(side=tk.LEFT, padx=4)
 
         # 绑定事件
         table.bind("<Double-1>", lambda e: self._on_table_double_click(table, e))
@@ -303,6 +330,102 @@ class XJJDesktopApp:
                 values=(r.get("video"), str(dir_path), r.get("file_size"), r.get("duration"), r.get("resolution"))
             )
             self._row_cache[item_id] = r
+
+    def _sort_table(self, table: ttk.Treeview, column_key: str) -> None:
+        """根据指定列对表格进行排序，点击同一列表头切换升/降序。
+
+        排序是稳定的：当某一列的值相同，保持当前行相对顺序不变。
+        """
+        try:
+            columns = list(table["columns"])
+        except Exception:
+            return
+
+        if column_key not in columns:
+            return
+
+        column_index = columns.index(column_key)
+
+        sort_state = getattr(table, "_sort_state", {"column": None, "ascending": True})
+        if sort_state.get("column") == column_key:
+            ascending = not sort_state.get("ascending", True)
+        else:
+            ascending = True
+
+        items = list(table.get_children())
+
+        def parse_file_size(value: str) -> float:
+            if not isinstance(value, str):
+                return 0.0
+            text = value.strip()
+            if not text:
+                return 0.0
+            try:
+                if text[-1] in ("G", "g"):
+                    return float(text[:-1]) * 1024.0
+                if text[-1] in ("M", "m"):
+                    return float(text[:-1])
+                return float(text)
+            except Exception:
+                return 0.0
+
+        def parse_duration(value: str) -> int:
+            if not isinstance(value, str):
+                return 0
+            parts = value.strip().split(":")
+            if len(parts) != 3:
+                return 0
+            try:
+                hours, minutes, seconds = [int(p) for p in parts]
+                return hours * 3600 + minutes * 60 + seconds
+            except Exception:
+                return 0
+
+        def parse_resolution(value: str):
+            if not isinstance(value, str):
+                return (0, 0)
+            text = value.strip().lower()
+            if "x" not in text:
+                return (0, 0)
+            try:
+                width, height = text.split("x", 1)
+                return int(width), int(height)
+            except Exception:
+                return (0, 0)
+
+        def key_for(item_id: str):
+            values = table.item(item_id, "values") or []
+            if column_index >= len(values):
+                return ""
+            raw = values[column_index]
+
+            if column_key == "file_size":
+                return parse_file_size(raw)
+            if column_key == "duration":
+                return parse_duration(raw)
+            if column_key == "resolution":
+                return parse_resolution(raw)
+            return str(raw) if raw is not None else ""
+
+        # Python 的 sorted 是稳定的，因此相同 key 的行会保持当前顺序
+        sorted_items = sorted(items, key=key_for, reverse=not ascending)
+
+        for index, item_id in enumerate(sorted_items):
+            table.move(item_id, "", index)
+
+        # 更新排序状态
+        table._sort_state = {"column": column_key, "ascending": ascending}
+
+        # 更新表头视觉指示：当前列名后附加 ↑/↓，其他列恢复为原始文字
+        header_texts = getattr(table, "_header_texts", {})
+        for col in columns:
+            base = header_texts.get(col, col)
+            if col == column_key:
+                arrow = " ↑" if ascending else " ↓"
+                label = f"{base}{arrow}"
+            else:
+                label = base
+            table.heading(col, text=label)
 
     # 页面：维护
     def show_maintain_page(self) -> None:

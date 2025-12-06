@@ -97,33 +97,79 @@ class VideoService:
                     (f"%{keyword}%", f"%{keyword}%")
                 )
 
-            results = []
-            for row in cursor.fetchall():
-                file_size_bytes = row['file_size']
-                if file_size_bytes:
-                    file_size_gb = file_size_bytes / (1024 * 1024 * 1024)
-                    if file_size_gb >= 1:
-                        file_size_formatted = f"{file_size_gb:.2f}G"
-                    else:
-                        file_size_mb = file_size_bytes / (1024 * 1024)
-                        file_size_formatted = f"{file_size_mb:.0f}M"
-                else:
-                    file_size_formatted = "未知"
-
-                # 统一 UI 字段：首列为“视频”，展示视频code，若缺失则回退文件名
-                video_label = row['video_code'] if row['video_code'] else row['filename']
-                results.append({
-                    'video': video_label,
-                    'file_path': row['file_path'],
-                    'file_size': file_size_formatted,
-                    'duration': row['duration_formatted'],
-                    'resolution': row['resolution']
-                })
-
-            return results
+            return self._rows_to_results(cursor.fetchall())
 
         except Exception as e:
             self.error_handler.handle_database_error(f"搜索视频失败: {e}", self.db_path, "search")
+            return []
+
+    def _rows_to_results(self, rows) -> List[Dict[str, str]]:
+        """将数据库行转换为统一的 UI 结果结构。"""
+        results: List[Dict[str, str]] = []
+        for row in rows:
+            file_size_bytes = row['file_size']
+            if file_size_bytes:
+                file_size_gb = file_size_bytes / (1024 * 1024 * 1024)
+                if file_size_gb >= 1:
+                    file_size_formatted = f"{file_size_gb:.2f}G"
+                else:
+                    file_size_mb = file_size_bytes / (1024 * 1024)
+                    file_size_formatted = f"{file_size_mb:.0f}M"
+            else:
+                file_size_formatted = "未知"
+
+            video_label = row['video_code'] if row['video_code'] else row['filename']
+            results.append({
+                'video': video_label,
+                'file_path': row['file_path'],
+                'file_size': file_size_formatted,
+                'duration': row['duration_formatted'],
+                'resolution': row['resolution']
+            })
+        return results
+
+    def random_videos(self, limit: int = 20, ensure_accessible: bool = True) -> List[Dict[str, str]]:
+        """随机挑选若干视频，优先返回路径可访问的视频。
+
+        ensure_accessible 为 True 时，会从更大的候选集合中过滤掉不存在的路径。
+        """
+        try:
+            self._ensure_storage()
+            cursor = self.storage.connection.cursor()
+
+            # 为了提高可访问路径的命中率，多取一些候选再做过滤
+            candidate_limit = max(limit * 5, limit)
+            cursor.execute(
+                """
+                SELECT video_code, filename, file_path, file_size, duration_formatted, resolution
+                FROM video_info
+                ORDER BY RANDOM()
+                LIMIT ?
+                """,
+                (candidate_limit,),
+            )
+
+            rows = cursor.fetchall()
+            if not ensure_accessible:
+                return self._rows_to_results(rows)[:limit]
+
+            # 过滤掉 file_path 不存在的记录
+            filtered = []
+            for row in rows:
+                file_path = row['file_path']
+                if file_path and os.path.exists(file_path):
+                    filtered.append(row)
+                if len(filtered) >= limit:
+                    break
+
+            # 如果过滤后不足 limit 条，就直接用已有的
+            if not filtered:
+                filtered = rows
+
+            return self._rows_to_results(filtered)[:limit]
+
+        except Exception as e:
+            self.error_handler.handle_database_error(f"随机挑选视频失败: {e}", self.db_path, "random_videos")
             return []
     
     def start_maintain(self, path: str, labels: Optional[str] = None, logical_path: Optional[str] = None) -> Dict[str, any]:
@@ -230,6 +276,11 @@ video_service = VideoService()
 def search_videos(keyword: str) -> List[Dict[str, str]]:
     """搜索视频 - 兼容性包装函数"""
     return video_service.search_videos(keyword)
+
+
+def random_videos(limit: int = 20, ensure_accessible: bool = True) -> List[Dict[str, str]]:
+    """随机挑选视频 - 兼容性包装函数"""
+    return video_service.random_videos(limit=limit, ensure_accessible=ensure_accessible)
 
 
 def start_maintain(path: str, labels: Optional[str] = None, logical_path: Optional[str] = None) -> Dict[str, any]:
