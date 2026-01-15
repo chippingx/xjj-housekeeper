@@ -60,10 +60,10 @@ def test_maintain_duplicate_videos_button_opens_window_and_sorts(monkeypatch, tm
     try:
         app = XJJDesktopApp()
         app.show_page("maintain")
-        btn_manage = _find_button_by_text(app.pages["maintain"], "旧视频管理")
-        assert btn_manage is not None, "未找到“旧视频管理”按钮"
+        btn_manage = _find_button_by_text(app.pages["maintain"], "问题视频")
+        assert btn_manage is not None, "未找到“问题视频”按钮"
         btn_manage.invoke()
-        app.root.update()
+        # app.root.update()
 
         button = _find_button_by_text(app.pages["maintain"], "重复视频")
         assert button is not None, "未找到“重复视频”按钮"

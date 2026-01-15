@@ -40,7 +40,7 @@ except ImportError:
     MovieDataCaptureService = None
 
 
-APP_TITLE = "XJJ Housekeeper"
+APP_TITLE = "小姐姐の管家"
 
 
 def run_filename_adjustment(
@@ -138,13 +138,15 @@ class XJJDesktopApp:
             background=self.colors["white"],
             fieldbackground=self.colors["white"],
             foreground=self.colors["gray800"],
-            rowheight=28,
+            rowheight=32,
         )
         style.configure(
             "Treeview.Heading",
             background=self.colors["gray100"],
             foreground=self.colors["gray800"],
             relief=tk.FLAT,
+            font=("Helvetica", 13, "bold"),
+            padding=(10, 8)
         )
         style.map("Treeview", background=[("selected", self.colors["brand"])], foreground=[("selected", self.colors["white"])])
 
@@ -166,8 +168,8 @@ class XJJDesktopApp:
             text=APP_TITLE,
             bg=self.colors["sidebar_bg"],
             fg=self.colors["brand"],  # 标题改为品牌色
-            font=("Helvetica", 14, "bold"),
-            padx=20, pady=20
+            font=("Helvetica", 18, "bold"),
+            padx=20, pady=24
         )
         brand.pack(anchor="w")
 
@@ -217,7 +219,7 @@ class XJJDesktopApp:
             text=text,
             bg=self.colors["sidebar_bg"],
             fg=self.colors["sidebar_fg"],
-            font=("Helvetica", 12),
+            font=("Helvetica", 13),
             bd=0,
             relief=tk.FLAT,
             activebackground=self.colors["sidebar_hover"],
@@ -465,9 +467,9 @@ class XJJDesktopApp:
             btn.pack(side=tk.LEFT, padx=(0, 4))
             tab_btns[key] = btn
 
-        create_tab_btn("import", "导入新视频")
-        create_tab_btn("manage", "旧视频管理")
-        create_tab_btn("movie_info", "影视讯息管理")
+        create_tab_btn("import", "新视频")
+        create_tab_btn("manage", "问题视频")
+        create_tab_btn("movie_info", "影视资讯")
 
         # 初始化各 Tab 内容
         self._init_maintain_import(tab_frames["import"])
@@ -703,7 +705,17 @@ class XJJDesktopApp:
         btn_row = tk.Frame(parent, bg=self.colors["white"])
         btn_row.pack(anchor="w", pady=4)
         tk.Button(btn_row, text="文件名调整", command=do_filename_adjustment, bg=self.colors["white"], relief=tk.GROOVE).pack(side=tk.LEFT, padx=6)
-        tk.Button(btn_row, text="开始维护", command=do_maintain, bg=self.colors["white"], relief=tk.GROOVE).pack(side=tk.LEFT, padx=6)
+        # 主操作按钮强调
+        tk.Button(
+            btn_row, 
+            text="录入仓库", 
+            command=do_maintain, 
+            bg=self.colors["brand"], 
+            fg=self.colors["white"], 
+            font=("Helvetica", 12, "bold"),
+            relief=tk.FLAT,
+            padx=12
+        ).pack(side=tk.LEFT, padx=6)
 
     def _init_maintain_manage(self, parent):
         tools_section = tk.Frame(parent, bg=self.colors["bg"])
