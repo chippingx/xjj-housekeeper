@@ -123,6 +123,19 @@ class SQLiteStorage:
                 scan_session_id TEXT
             )
         """)
+
+        # 用户视频偏好表：按视频号记录喜好/评分等状态
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS video_preferences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_code TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL,
+                created_time TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_time TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
         
         self.connection.commit()
     
@@ -167,6 +180,10 @@ class SQLiteStorage:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_merge_video_code ON merge_history(video_code)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_merge_time ON merge_history(merge_time)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_merge_scan_session ON merge_history(scan_session_id)")
+
+        # video_preferences 表索引
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_video_pref_code ON video_preferences(video_code)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_video_pref_status ON video_preferences(status)")
         
         self.connection.commit()
     
@@ -1293,7 +1310,8 @@ class SQLiteStorage:
             'video_tags', 
             'scan_history',
             'video_master_list',
-            'merge_history'
+            'merge_history',
+            'video_preferences',
         ]
         
         validation_results = {}
@@ -1443,6 +1461,54 @@ class SQLiteStorage:
             videos.append(video_info)
         
         return videos
+
+    # ==================== Video Preferences 操作方法 ====================
+
+    def upsert_video_preference(self, video_code: str, status: str) -> None:
+        """插入或更新视频偏好状态。
+
+        Args:
+            video_code: 视频号或用于标识视频的代码
+            status: 偏好状态，如 'like'、'dislike' 等
+        """
+        if not video_code or not status:
+            return
+
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            INSERT INTO video_preferences (video_code, status)
+            VALUES (?, ?)
+            ON CONFLICT(video_code) DO UPDATE SET
+                status = excluded.status,
+                updated_time = CURRENT_TIMESTAMP
+            """,
+            (video_code, status),
+        )
+        self.connection.commit()
+
+    def get_video_preference(self, video_code: str) -> Optional[str]:
+        """获取视频的偏好状态。"""
+        if not video_code:
+            return None
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT status FROM video_preferences WHERE video_code = ?",
+            (video_code,),
+        )
+        row = cursor.fetchone()
+        return row["status"] if row else None
+
+    def clear_video_preference(self, video_code: str) -> None:
+        """清除某个视频号的偏好记录。"""
+        if not video_code:
+            return
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "DELETE FROM video_preferences WHERE video_code = ?",
+            (video_code,),
+        )
+        self.connection.commit()
     
     def update_csv_merge_history_processed_count(self, history_id: int, processed_count: int):
         """

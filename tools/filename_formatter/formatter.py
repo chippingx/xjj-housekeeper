@@ -230,7 +230,7 @@ class FilenameFormatter:
     # ---------------------------
     # 批量重命名（不移动）
     # ---------------------------
-    def rename_in_directory(self, base_path: str, include_subdirs: bool = False, flatten_output: bool = False, dry_run: bool = False, conflict_resolution: str = "skip", log_operations: bool = False, verify_size: bool = False) -> List[RenameResult]:
+    def rename_in_directory(self, base_path: str, include_subdirs: bool = False, flatten_output: bool = False, dry_run: bool = False, conflict_resolution: str = "skip", log_operations: bool = False, verify_size: bool = False, progress_callback=None) -> List[RenameResult]:
         """
         对指定目录中的视频文件进行批量重命名：
         - 仅处理扩展名匹配的文件
@@ -352,14 +352,25 @@ class FilenameFormatter:
                 except Exception as e:
                     results.append(RenameResult(original=full_path, new=target_path, status=f"error: {e}"))
 
+        # 1. 收集所有待处理文件
+        all_files = []
         if include_subdirs:
             for root, _, files in os.walk(base_path):
                 for f in files:
-                    handle_file(root, f)
+                    all_files.append((root, f))
         else:
             for f in os.listdir(base_path):
                 if os.path.isfile(os.path.join(base_path, f)):
-                    handle_file(base_path, f)
+                    all_files.append((base_path, f))
+
+        total_files = len(all_files)
+        
+        # 2. 迭代处理
+        for i, (root, f) in enumerate(all_files):
+            if progress_callback:
+                progress_callback(i + 1, total_files, f"Processing {f}...")
+            
+            handle_file(root, f)
 
         # 如果启用扁平化，清理空目录
         if flatten_output and include_subdirs:

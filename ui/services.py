@@ -3,6 +3,8 @@ from typing import List, Dict, Optional
 import os
 import sys
 from pathlib import Path
+import random
+import time
 
 # 添加tools目录到路径，以便导入video_info_collector模块
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -91,7 +93,7 @@ class VideoService:
                     # 优先按视频码匹配，同时支持按标签关键字匹配
                     cursor.execute(
                         """
-                        SELECT id, video_code, filename, file_path, file_size, duration_formatted, resolution
+                        SELECT id, video_code, filename, file_path, file_size, duration_formatted, resolution, updated_time
                         FROM video_info
                         WHERE video_code LIKE ?
                            OR id IN (
@@ -107,7 +109,7 @@ class VideoService:
                 else:
                     cursor.execute(
                         """
-                        SELECT id, video_code, filename, file_path, file_size, duration_formatted, resolution
+                        SELECT id, video_code, filename, file_path, file_size, duration_formatted, resolution, updated_time
                         FROM video_info
                         WHERE video_code LIKE ?
                         ORDER BY updated_time DESC
@@ -119,7 +121,7 @@ class VideoService:
                 if has_video_tags:
                     cursor.execute(
                         """
-                        SELECT id, NULL AS video_code, filename, file_path, file_size, duration_formatted, resolution
+                        SELECT id, NULL AS video_code, filename, file_path, file_size, duration_formatted, resolution, updated_time
                         FROM video_info
                         WHERE filename LIKE ?
                            OR file_path LIKE ?
@@ -136,7 +138,7 @@ class VideoService:
                 else:
                     cursor.execute(
                         """
-                        SELECT id, NULL AS video_code, filename, file_path, file_size, duration_formatted, resolution
+                        SELECT id, NULL AS video_code, filename, file_path, file_size, duration_formatted, resolution, updated_time
                         FROM video_info
                         WHERE filename LIKE ? OR file_path LIKE ?
                         ORDER BY updated_time DESC
@@ -157,7 +159,20 @@ class VideoService:
         """将数据库行转换为统一的 UI 结果结构。"""
         results: List[Dict[str, str]] = []
         for row in rows:
-            file_size_bytes = row['file_size']
+            # 兼容 sqlite3.Row 和 dict
+            if isinstance(row, dict):
+                get_val = row.get
+            else:
+                # 假设是 sqlite3.Row 或 tuple
+                # 注意：如果是 tuple，只能按索引访问，但这里 row['key'] 风格暗示了 Row 对象
+                # sqlite3.Row 支持按列名访问，但没有 .get() 方法
+                def get_val(key, default=None):
+                    try:
+                        return row[key]
+                    except (IndexError, KeyError):
+                        return default
+
+            file_size_bytes = get_val('file_size')
             if file_size_bytes:
                 file_size_gb = file_size_bytes / (1024 * 1024 * 1024)
                 if file_size_gb >= 1:
@@ -169,12 +184,12 @@ class VideoService:
                 file_size_formatted = "未知"
 
             # 统一 UI 字段：首列展示视频码，缺失时回退文件名
-            video_label = row['video_code'] if row['video_code'] else row['filename']
+            video_label = get_val('video_code') if get_val('video_code') else get_val('filename')
 
             # 聚合标签信息（video_tags 多对多关系）
             tags_label = ""
             try:
-                video_id = row.get('id') if isinstance(row, dict) else row['id']
+                video_id = get_val('id')
             except Exception:
                 video_id = None
             try:
@@ -185,13 +200,24 @@ class VideoService:
             except Exception:
                 tags_label = ""
 
+            # 读取用户偏好状态（按视频号作为主键）
+            preference_status: Optional[str] = None
+            try:
+                code_key = video_label
+                if code_key and hasattr(self.storage, 'get_video_preference'):
+                    preference_status = self.storage.get_video_preference(code_key)
+            except Exception:
+                preference_status = None
+
             results.append({
                 'video': video_label,
                 'tags': tags_label,
-                'file_path': row['file_path'],
+                'file_path': get_val('file_path'),
                 'file_size': file_size_formatted,
-                'duration': row['duration_formatted'],
-                'resolution': row['resolution']
+                'duration': get_val('duration_formatted'),
+                'resolution': get_val('resolution'),
+                'updated_time': get_val('updated_time'),
+                'preference': preference_status,
             })
         return results
 
@@ -208,7 +234,7 @@ class VideoService:
             candidate_limit = max(limit * 5, limit)
             cursor.execute(
                 """
-                SELECT id, video_code, filename, file_path, file_size, duration_formatted, resolution
+                SELECT id, video_code, filename, file_path, file_size, duration_formatted, resolution, updated_time
                 FROM video_info
                 ORDER BY RANDOM()
                 LIMIT ?
@@ -238,8 +264,130 @@ class VideoService:
         except Exception as e:
             self.error_handler.handle_database_error(f"随机挑选视频失败: {e}", self.db_path, "random_videos")
             return []
+
+    def latest_videos(self, days: int = 14, limit: int = 20, ensure_accessible: bool = True) -> List[Dict[str, str]]:
+        """随机返回最近若干天内修改过的视频。"""
+        try:
+            self._ensure_storage()
+            cursor = self.storage.connection.cursor()
+            cursor.execute(
+                """
+                SELECT id, video_code, filename, file_path, file_size, duration_formatted, resolution, updated_time
+                FROM video_info
+                """,
+            )
+            rows = cursor.fetchall()
+            if not rows:
+                return []
+
+            cutoff = time.time() - max(days, 0) * 24 * 3600
+            candidates = []
+            for row in rows:
+                # 兼容 sqlite3.Row
+                try:
+                    file_path = row['file_path']
+                except (IndexError, KeyError):
+                    file_path = None
+
+                if not file_path:
+                    continue
+                if ensure_accessible and not os.path.exists(file_path):
+                    continue
+                try:
+                    mtime = os.path.getmtime(file_path)
+                except Exception:
+                    continue
+                if mtime >= cutoff:
+                    candidates.append(row)
+
+            if not candidates:
+                return []
+
+            if limit is not None and limit > 0 and len(candidates) > limit:
+                candidates = random.sample(candidates, limit)
+
+            return self._rows_to_results(candidates)
+        except Exception as e:
+            self.error_handler.handle_database_error(f"获取最新视频失败: {e}", self.db_path, "latest_videos")
+            return []
+
+    def broken_videos(self, ensure_accessible: bool = True) -> List[Dict[str, str]]:
+        """返回所有元数据缺失（如 duration 为空）的视频。"""
+        try:
+            self._ensure_storage()
+            cursor = self.storage.connection.cursor()
+            cursor.execute(
+                """
+                SELECT id, video_code, filename, file_path, file_size, duration_formatted, resolution, updated_time
+                FROM video_info
+                WHERE duration_formatted IS NULL OR duration_formatted = ''
+                """
+            )
+            rows = cursor.fetchall()
+            
+            if not ensure_accessible:
+                return self._rows_to_results(rows)
+
+            filtered = []
+            for row in rows:
+                # 兼容 sqlite3.Row
+                try:
+                    file_path = row['file_path']
+                except (IndexError, KeyError):
+                    file_path = None
+                    
+                if file_path and os.path.exists(file_path):
+                    filtered.append(row)
+            
+            return self._rows_to_results(filtered)
+
+        except Exception as e:
+            self.error_handler.handle_database_error(f"查询损坏视频失败: {e}", self.db_path, "broken_videos")
+            return []
+
+    def duplicate_videos(self, ensure_accessible: bool = True) -> List[Dict[str, str]]:
+        """返回所有疑似重复的视频（文件大小相同的视频）。"""
+        try:
+            self._ensure_storage()
+            cursor = self.storage.connection.cursor()
+            
+            # 查找有重复文件大小的记录
+            cursor.execute(
+                """
+                SELECT v.id, v.video_code, v.filename, v.file_path, v.file_size, v.duration_formatted, v.resolution, v.updated_time
+                FROM video_info v
+                JOIN (
+                    SELECT file_size
+                    FROM video_info
+                    WHERE file_size IS NOT NULL AND file_size > 0
+                    GROUP BY file_size
+                    HAVING COUNT(*) > 1
+                ) dup ON v.file_size = dup.file_size
+                ORDER BY v.file_size DESC, v.filename
+                """
+            )
+            rows = cursor.fetchall()
+            
+            if not ensure_accessible:
+                return self._rows_to_results(rows)
+
+            filtered = []
+            for row in rows:
+                try:
+                    file_path = row['file_path']
+                except (IndexError, KeyError):
+                    file_path = None
+                    
+                if file_path and os.path.exists(file_path):
+                    filtered.append(row)
+            
+            return self._rows_to_results(filtered)
+
+        except Exception as e:
+            self.error_handler.handle_database_error(f"查询重复视频失败: {e}", self.db_path, "duplicate_videos")
+            return []
     
-    def start_maintain(self, path: str, labels: Optional[str] = None, logical_path: Optional[str] = None) -> Dict[str, any]:
+    def start_maintain(self, path: str, labels: Optional[str] = None, logical_path: Optional[str] = None, progress_callback=None) -> Dict[str, any]:
         """开始维护视频数据。
 
         当前实现：
@@ -270,7 +418,8 @@ class VideoService:
             # 使用full_scan方法扫描视频文件
             scan_result = scanner.full_scan(
                 path, 
-                recursive=True
+                recursive=True,
+                progress_callback=progress_callback
             )
             
             # 检查扫描结果
@@ -406,6 +555,45 @@ class VideoService:
 
         self.storage.connection.commit()
 
+    # ==================== 视频偏好操作 ====================
+
+    def set_video_preference(self, video_code: str, status: Optional[str]) -> None:
+        """设置某个视频号的偏好状态。
+
+        status 示例："like"、"dislike"；传入 None/空串表示清除偏好。
+        """
+        try:
+            self._ensure_storage()
+            code_key = (video_code or "").strip()
+            if not code_key or not hasattr(self.storage, "upsert_video_preference"):
+                return
+
+            if not status:
+                # 清除偏好
+                if hasattr(self.storage, "clear_video_preference"):
+                    self.storage.clear_video_preference(code_key)
+                return
+
+            self.storage.upsert_video_preference(code_key, status)
+        except Exception as e:
+            self.error_handler.handle_database_error(
+                f"设置视频偏好失败: {e}", self.db_path, "set_video_preference"
+            )
+
+    def get_video_preference(self, video_code: str) -> Optional[str]:
+        """获取某个视频号的偏好状态。"""
+        try:
+            self._ensure_storage()
+            code_key = (video_code or "").strip()
+            if not code_key or not hasattr(self.storage, "get_video_preference"):
+                return None
+            return self.storage.get_video_preference(code_key)
+        except Exception as e:
+            self.error_handler.handle_database_error(
+                f"获取视频偏好失败: {e}", self.db_path, "get_video_preference"
+            )
+            return None
+
 
 # 创建全局服务实例
 video_service = VideoService()
@@ -421,6 +609,21 @@ def random_videos(limit: int = 20, ensure_accessible: bool = True) -> List[Dict[
     return video_service.random_videos(limit=limit, ensure_accessible=ensure_accessible)
 
 
-def start_maintain(path: str, labels: Optional[str] = None, logical_path: Optional[str] = None) -> Dict[str, any]:
+def latest_videos(days: int = 14, limit: int = 20, ensure_accessible: bool = True) -> List[Dict[str, str]]:
+    """随机挑选最近若干天内修改过的视频 - 兼容性包装函数"""
+    return video_service.latest_videos(days=days, limit=limit, ensure_accessible=ensure_accessible)
+
+
+def broken_videos(ensure_accessible: bool = True) -> List[Dict[str, str]]:
+    """获取损坏视频 - 兼容性包装函数"""
+    return video_service.broken_videos(ensure_accessible=ensure_accessible)
+
+
+def start_maintain(path: str, labels: Optional[str] = None, logical_path: Optional[str] = None, progress_callback=None) -> Dict[str, any]:
     """开始维护视频数据 - 兼容性包装函数"""
-    return video_service.start_maintain(path, labels, logical_path)
+    return video_service.start_maintain(path, labels, logical_path, progress_callback=progress_callback)
+
+
+def set_video_preference(video_code: str, status: Optional[str]) -> None:
+    """设置视频偏好状态 - 兼容性包装函数"""
+    video_service.set_video_preference(video_code, status)
