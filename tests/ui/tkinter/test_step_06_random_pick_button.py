@@ -66,8 +66,8 @@ def test_random_pick_button_exists():
         except Exception as exc:  # pragma: no cover
             pytest.skip(f"Tkinter 应用构造失败，跳过测试：{exc}")
 
-        app.show_query_page()
-        btn = _find_button_by_text(app.content_inner, "随机挑选")
+        app.show_page("query")
+        btn = _find_button_by_text(app.pages["query"], "随机挑选")
         assert btn is not None, "未找到‘随机挑选’按钮"
     finally:
         if app is not None:
@@ -92,12 +92,12 @@ def test_random_pick_uses_service_and_renders_rows(monkeypatch):
             pytest.skip(f"Tkinter 应用构造失败，跳过测试：{exc}")
 
         # 先切到查询页面，确保按钮和表格都已创建
-        app.show_query_page()
+        app.show_page("query")
 
         # 查找表格和按钮
-        table = _find_treeview(app.content_inner)
+        table = _find_treeview(app.pages["query"])
         assert table is not None, "未找到结果表格"
-        btn = _find_button_by_text(app.content_inner, "随机挑选")
+        btn = _find_button_by_text(app.pages["query"], "随机挑选")
         assert btn is not None, "未找到‘随机挑选’按钮"
 
         calls = []
@@ -136,7 +136,8 @@ def test_random_pick_uses_service_and_renders_rows(monkeypatch):
         items = table.get_children()
         assert len(items) == 2
         first_values = table.item(items[0], "values")
-        assert first_values[0] == "RANDOM-001"
+        # 结果按文件大小降序排序，所以 200M 的 RANDOM-002 排在前面
+        assert first_values[0] == "RANDOM-002"
     finally:
         if app is not None:
             try:

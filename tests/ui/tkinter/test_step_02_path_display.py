@@ -9,7 +9,7 @@ class TestPathDisplay:
         app = XJJDesktopApp()
         
         # 创建模拟表格
-        container = tk.Frame(app.content_inner)
+        container = tk.Frame(app.pages["query"])
         table = tk.ttk.Treeview(container, columns=("filename", "file_path", "file_size", "duration", "resolution"), show="headings")
         
         # 测试数据
@@ -44,7 +44,7 @@ class TestPathDisplay:
         app = XJJDesktopApp()
         
         # 创建模拟表格
-        container = tk.Frame(app.content_inner)
+        container = tk.Frame(app.pages["query"])
         table = tk.ttk.Treeview(container, columns=("filename", "file_path", "file_size", "duration", "resolution"), show="headings")
         
         # 测试数据

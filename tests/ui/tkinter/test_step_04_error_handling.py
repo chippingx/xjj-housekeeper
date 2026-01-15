@@ -35,11 +35,11 @@ class TestErrorHandling:
         # 测试不同平台的命令调用
         if app.root.tk.call("tk", "windowingsystem") == "win32":
             monkeypatch.setattr("os.startfile", mock_startfile)
-            app._open_file_manager("/test/path")
+            app._play_video("/test/path")
             assert called_commands == ["startfile: /test/path"]
         else:
             monkeypatch.setattr("os.system", mock_system)
-            app._open_file_manager("/test/path")
+            app._play_video("/test/path")
             if app.root.tk.call("tk", "windowingsystem") == "aqua":  # macOS
                 assert called_commands == ["open '/test/path'"]
             else:  # Linux

@@ -33,8 +33,8 @@ def test_query_table_includes_tags_column_and_renders_tags():
         except Exception as exc:  # pragma: no cover
             pytest.skip(f"Tkinter 应用构造失败，跳过测试：{exc}")
 
-        app.show_query_page()
-        table = _find_treeview(app.content_inner)
+        app.show_page("query")
+        table = _find_treeview(app.pages["query"])
         assert table is not None, "未找到结果表格"
 
         # 验证列顺序包含 video -> tags -> file_path ...

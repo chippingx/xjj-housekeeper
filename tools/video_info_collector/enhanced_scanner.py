@@ -53,7 +53,8 @@ class EnhancedVideoScanner:
     
     def full_scan(self, directory_path: str, recursive: bool = True, 
                   update_existing: bool = True, 
-                  check_missing: bool = True) -> Dict[str, any]:
+                  check_missing: bool = True,
+                  progress_callback=None) -> Dict[str, any]:
         """
         执行完整扫描
         
@@ -62,6 +63,7 @@ class EnhancedVideoScanner:
             recursive: 是否递归扫描
             update_existing: 是否更新现有记录
             check_missing: 是否检查丢失文件
+            progress_callback: 进度回调函数 (current, total, message)
             
         Returns:
             Dict: 扫描结果报告
@@ -73,14 +75,18 @@ class EnhancedVideoScanner:
         
         try:
             # 2. 扫描文件
+            if progress_callback:
+                progress_callback(0, 0, f"开始扫描目录: {directory_path}")
             print(f"开始扫描目录: {directory_path}")
             video_files = self.file_scanner.scan_directory(directory_path, recursive)
             self.scan_stats['files_found'] = len(video_files)
             print(f"发现 {len(video_files)} 个视频文件")
             
             # 3. 提取元数据
+            if progress_callback:
+                progress_callback(0, len(video_files), "提取视频元数据...")
             print("提取视频元数据...")
-            new_videos = self._extract_metadata_batch(video_files)
+            new_videos = self._extract_metadata_batch(video_files, progress_callback)
             self.scan_stats['files_processed'] = len(new_videos)
             
             # 4. 获取现有视频记录
@@ -211,13 +217,17 @@ class EnhancedVideoScanner:
         
         return report
     
-    def _extract_metadata_batch(self, file_paths: List[str]) -> List[VideoInfo]:
+    def _extract_metadata_batch(self, file_paths: List[str], progress_callback=None) -> List[VideoInfo]:
         """批量提取元数据"""
         videos = []
+        total = len(file_paths)
         
         for i, file_path in enumerate(file_paths):
             try:
-                print(f"处理文件 {i+1}/{len(file_paths)}: {os.path.basename(file_path)}")
+                msg = f"处理文件 {i+1}/{total}: {os.path.basename(file_path)}"
+                if progress_callback:
+                    progress_callback(i+1, total, msg)
+                print(msg)
                 video_info = self.metadata_extractor.extract_metadata(file_path)
                 if video_info:
                     videos.append(video_info)

@@ -43,12 +43,18 @@ def test_query_input_trims_spaces_before_search(monkeypatch):
         monkeypatch.setattr("ui.tkinter.app.search_videos", fake_search_videos)
 
         # 切到查询页面并找到输入框
-        app.show_query_page()
-        entry = _find_first_entry(app.content_inner)
+        app.show_page("query")
+        entry = _find_first_entry(app.pages["query"])
         assert entry is not None, "未能在查询页找到输入框"
 
         # 方式 1：通过回车事件触发 do_search -> do_search_live
+        # 注意：先清空占位符，否则 insert 会拼接在占位符前
+        if app.query_var.get() == app.query_placeholder:
+            entry.delete(0, tk.END)
+            
         entry.insert(0, "  ABC123  ")
+        # 手动同步 StringVar，确保 trace 或 get 能获取到最新值
+        app.query_var.set(entry.get())
         entry.event_generate("<Return>")
 
         # 方式 2：直接修改 StringVar 触发 trace_add('write') 路径
@@ -85,8 +91,8 @@ def test_query_and_maintain_inputs_have_context_menu():
             pytest.skip(f"Tkinter 应用构造失败，跳过测试：{exc}")
 
         # 查询页输入框
-        app.show_query_page()
-        query_entry = _find_first_entry(app.content_inner)
+        app.show_page("query")
+        query_entry = _find_first_entry(app.pages["query"])
         assert query_entry is not None, "查询页未找到输入框"
 
         # _attach_entry_context_menu 会在 entry 上挂 _context_menu 属性
@@ -108,8 +114,8 @@ def test_query_and_maintain_inputs_have_context_menu():
         )
 
         # 维护页输入框
-        app.show_maintain_page()
-        maintain_entry = _find_first_entry(app.content_inner)
+        app.show_page("maintain")
+        maintain_entry = _find_first_entry(app.pages["maintain"])
         assert maintain_entry is not None, "维护页未找到输入框"
         assert hasattr(maintain_entry, "_context_menu"), "维护输入框未挂载上下文菜单属性"
         maintain_menu = getattr(maintain_entry, "_context_menu")

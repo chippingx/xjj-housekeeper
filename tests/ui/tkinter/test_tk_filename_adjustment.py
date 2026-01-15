@@ -29,8 +29,8 @@ def test_filename_adjustment_button_exists():
         pytest.skip(f"Tkinter 初始化失败，跳过UI按钮测试：{e}")
 
     try:
-        app.show_maintain_page()
-        btn = _find_button_by_text(app.content_inner, "文件名调整")
+        app.show_page("maintain")
+        btn = _find_button_by_text(app.pages["maintain"], "文件名调整")
         assert btn is not None, "未找到‘文件名调整’按钮"
     finally:
         # 关闭窗口以避免阻塞或资源泄漏

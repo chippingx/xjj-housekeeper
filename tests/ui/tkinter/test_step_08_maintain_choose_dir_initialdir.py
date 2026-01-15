@@ -33,7 +33,7 @@ def test_choose_dir_uses_current_scan_path_as_initialdir(tmp_path, monkeypatch):
         except Exception as exc:  # pragma: no cover
             pytest.skip(f"Tkinter 应用构造失败，跳过测试：{exc}")
 
-        app.show_maintain_page()
+        app.show_page("maintain")
 
         # 在扫描路径输入框中预填一个存在的目录
         current_dir = str(tmp_path)
@@ -52,7 +52,7 @@ def test_choose_dir_uses_current_scan_path_as_initialdir(tmp_path, monkeypatch):
         monkeypatch.setattr("ui.tkinter.app.filedialog.askdirectory", fake_askdirectory)
 
         # 触发“选择目录”按钮
-        btn = _find_button_by_text(app.content_inner, "选择目录")
+        btn = _find_button_by_text(app.pages["maintain"], "选择目录")
         assert btn is not None, "未找到‘选择目录’按钮"
         btn.invoke()
 
@@ -84,7 +84,7 @@ def test_choose_dir_falls_back_to_last_scan_dir(tmp_path, monkeypatch):
         except Exception as exc:  # pragma: no cover
             pytest.skip(f"Tkinter 应用构造失败，跳过测试：{exc}")
 
-        app.show_maintain_page()
+        app.show_page("maintain")
 
         # 清空输入框，但预设 last_scan_dir
         app.scan_dir_var.set("")
@@ -100,7 +100,7 @@ def test_choose_dir_falls_back_to_last_scan_dir(tmp_path, monkeypatch):
         monkeypatch.setattr("ui.tkinter.app.os.path.isdir", lambda p: True)
         monkeypatch.setattr("ui.tkinter.app.filedialog.askdirectory", fake_askdirectory)
 
-        btn = _find_button_by_text(app.content_inner, "选择目录")
+        btn = _find_button_by_text(app.pages["maintain"], "选择目录")
         assert btn is not None, "未找到‘选择目录’按钮"
         btn.invoke()
 

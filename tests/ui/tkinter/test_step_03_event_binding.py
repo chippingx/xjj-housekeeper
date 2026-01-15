@@ -8,13 +8,13 @@ class TestEventBinding:
         app = XJJDesktopApp()
         
         # 显示查询页面
-        app.show_query_page()
+        app.show_page("query")
         
         # 获取表格组件
         table = None
-        # 内容结构：content_inner -> container -> table_container -> table
-        for container in app.content_inner.winfo_children():
-            for table_container in container.winfo_children():
+        # 内容结构：pages["query"] -> content -> table_container -> table
+        for content in app.pages["query"].winfo_children():
+            for table_container in content.winfo_children():
                 for widget in table_container.winfo_children():
                     if isinstance(widget, tk.ttk.Treeview):
                         table = widget

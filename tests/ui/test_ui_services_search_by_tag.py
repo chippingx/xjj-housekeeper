@@ -27,7 +27,7 @@ def test_search_videos_supports_tag_keyword(tmp_path: Path):
         INSERT INTO video_info (file_path, filename, file_size, duration_formatted, resolution, created_time, video_code)
         VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
         """,
-        ("/tmp/adn641.mp4", "ADN-641.mp4", 100 * 1024 * 1024, "00:10:00", "1920x1080", "ADN-641"),
+        ("/tmp/tst641.mp4", "TST-641.mp4", 100 * 1024 * 1024, "00:10:00", "1920x1080", "TST-641"),
     )
     video_id = cur.lastrowid
 
@@ -41,7 +41,7 @@ def test_search_videos_supports_tag_keyword(tmp_path: Path):
     assert results, "按标签搜索应返回结果"
     # 只插入了一条，因此应返回一条记录，且标签文本包含我们的标签
     result = results[0]
-    assert result["video"] == "ADN-641"
+    assert result["video"] == "TST-641"
     assert "白峰美羽" in (result.get("tags") or "")
 
     # 另一标签同样可命中

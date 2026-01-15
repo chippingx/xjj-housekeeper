@@ -19,7 +19,7 @@ def test_complete_modal_accessibility_attributes():
 
 
 def test_route_after_escape_returns_query_when_modal_open():
-    app = import_module("ui.app")
+    app = import_module("ui.streamlit.app")
     assert app.route_after_escape(app.ROUTE_MAINTAIN, modal_open=True) == app.ROUTE_QUERY
     assert app.route_after_escape(app.ROUTE_QUERY, modal_open=True) == app.ROUTE_QUERY
     assert app.route_after_escape(app.ROUTE_MAINTAIN, modal_open=False) == app.ROUTE_MAINTAIN

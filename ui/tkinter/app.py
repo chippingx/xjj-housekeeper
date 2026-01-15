@@ -836,7 +836,9 @@ class XJJDesktopApp:
             for col in columns:
                 if col in ("video", "filename"): values.append(video_label)
                 elif col in ("tags", "labels"): values.append(tags_label)
-                elif col == "file_path": values.append(r.get("file_path") or "")
+                elif col == "file_path":
+                    fp = r.get("file_path")
+                    values.append(str(Path(fp).parent) if fp else "")
                 elif col == "file_size": values.append(r.get("file_size", ""))
                 elif col == "duration": values.append(r.get("duration", ""))
                 elif col == "resolution": values.append(r.get("resolution", ""))
@@ -913,11 +915,23 @@ class XJJDesktopApp:
         try:
             item = table.identify_row(event.y)
             if not item: return
+            
+            # Identify column
+            col_name = None
+            try:
+                col_id = table.identify_column(event.x)
+                col_idx = int(col_id.replace("#", "")) - 1
+                col_name = table["columns"][col_idx]
+            except: pass
+
             row = getattr(table, "_row_cache", {}).get(item, {})
             file_path = row.get("file_path")
             if file_path:
                 if Path(file_path).exists():
-                    self._play_video(file_path)
+                    if col_name == "file_path" or col_name == "path":
+                        self._open_file_manager(file_path)
+                    else:
+                        self._play_video(file_path)
                 else:
                     messagebox.showerror("文件不存在", f"无法访问视频文件：\n{file_path}\n\n该文件可能已被移动、删除或所在的驱动器未连接。")
         finally:
@@ -925,6 +939,18 @@ class XJJDesktopApp:
             self.root.after(500, lambda: setattr(self, "_processing_click", False))
         
         return "break"
+
+    def _open_file_manager(self, path: str):
+        try:
+            p = Path(path)
+            target = p.parent if p.is_file() else p
+            path_str = str(target)
+            
+            if sys.platform == "win32": os.startfile(path_str)
+            elif sys.platform == "darwin": os.system(f"open '{path_str}'")
+            else: os.system(f"xdg-open '{path_str}'")
+        except Exception as e:
+            messagebox.showerror("打开目录失败", str(e))
 
     def _on_table_right_click(self, table: ttk.Treeview, event: tk.Event):
         item = table.identify_row(event.y)

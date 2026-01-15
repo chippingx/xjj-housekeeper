@@ -41,10 +41,10 @@ def test_query_input_has_placeholder_and_no_label_video_code():
     app = None
     try:
         app = XJJDesktopApp()
-        app.show_query_page()
+        app.show_page("query")
 
         # 页面上应该能找到输入框
-        entry = _find_first_entry(app.content_inner)
+        entry = _find_first_entry(app.pages["query"])
         assert entry is not None, "未在查询页找到输入框"
 
         # 默认值应为 placeholder 文本
@@ -63,7 +63,7 @@ def test_query_input_has_placeholder_and_no_label_video_code():
                     return True
             return False
 
-        assert not _has_label_with_text(app.content_inner, "视频码"), "应移除旧的“视频码”标签"
+        assert not _has_label_with_text(app.pages["query"], "视频码"), "应移除旧的“视频码”标签"
     finally:
         if app is not None:
             try:
@@ -91,7 +91,7 @@ def test_query_placeholder_does_not_trigger_search(monkeypatch):
 
         monkeypatch.setattr("ui.tkinter.app.search_videos", fake_search_videos)
 
-        app.show_query_page()
+        app.show_page("query")
         # 初始时 query_var 是占位符文本
         assert app.query_var.get() == "视频号/标签"
 

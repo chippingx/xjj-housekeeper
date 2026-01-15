@@ -28,8 +28,8 @@ def test_extract_video_code():
         ("simple_name.avi", None),  # 简单文件名，无特定模式
         ("", None),  # 空文件名
         ("no_extension", None),  # 无扩展名，无特定模式
-        ("STARS-123.mp4", "STARS-123"),  # STARS格式
-        ("SSIS123.mkv", "SSIS123"),  # 字母数字组合
+        ("TESTS-123.mp4", "TESTS-123"),  # STARS格式
+        ("TEST1234.mkv", "TEST1234"),  # 字母数字组合
     ]
     
     all_passed = True

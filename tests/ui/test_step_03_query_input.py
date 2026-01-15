@@ -2,8 +2,8 @@ import importlib
 
 
 def test_validation_api_and_constants_present():
-    app = importlib.import_module("ui.app")
-    v = importlib.import_module("ui.validation")
+    app = importlib.import_module("ui.streamlit.app")
+    v = importlib.import_module("ui.streamlit.validation")
 
     # app 常量与占位文案
     assert hasattr(app, "QUERY_PLACEHOLDER")
@@ -19,7 +19,7 @@ def test_validation_api_and_constants_present():
 
 
 def test_is_valid_video_code_exact_pattern():
-    v = importlib.import_module("ui.validation")
+    v = importlib.import_module("ui.streamlit.validation")
     # 合法示例（大小写不敏感）
     assert v.is_valid_video_code("ABC-123") is True
     assert v.is_valid_video_code("abc-123") is True
@@ -31,8 +31,8 @@ def test_is_valid_video_code_exact_pattern():
 
 
 def test_validate_query_input_messages():
-    v = importlib.import_module("ui.validation")
-    app = importlib.import_module("ui.app")
+    v = importlib.import_module("ui.streamlit.validation")
+    app = importlib.import_module("ui.streamlit.app")
 
     ok, msg = v.validate_query_input("")
     assert ok is False and msg == app.QUERY_EMPTY_HINT
