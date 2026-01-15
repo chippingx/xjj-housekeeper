@@ -8,3 +8,4 @@ rename_rules.yaml
 # 程序输出目录
 output/
 .vscode
+integration_test_temp

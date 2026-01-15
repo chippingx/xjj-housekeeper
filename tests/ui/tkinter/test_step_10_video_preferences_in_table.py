@@ -53,27 +53,10 @@ def test_right_click_menu_has_preference_actions_and_updates_row(monkeypatch):
             calls.append((code, status))
 
         monkeypatch.setattr("ui.tkinter.app.set_video_preference", fake_set_video_preference)
-        
-        # Mock table.bbox if it returns empty (common in headless/test envs)
-        original_bbox = table.bbox
-        def fake_bbox(item_id, column=None):
-            res = original_bbox(item_id, column)
-            if not res:
-                # Return a dummy bounding box: (x, y, width, height)
-                return (0, 0, 100, 20)
-            return res
-        monkeypatch.setattr(table, "bbox", fake_bbox)
 
-        # Mock identify_row/column via ttk.Treeview class patch since we can't easily patch instance
-        # This is a bit invasive but necessary for headless testing of interaction
-        from tkinter import ttk
-        monkeypatch.setattr(ttk.Treeview, "identify_row", lambda self, y: item_ids[0] if item_ids else "")
-        monkeypatch.setattr(ttk.Treeview, "identify_column", lambda self, x: "#1")
-
-        # 构造一个虚拟事件，让右键点击落在第一行上
-        bbox = table.bbox(first_item)
-        assert bbox, "无法获取首行位置"
-        event = SimpleNamespace(x=5, y=bbox[1] + 1, x_root=5, y_root=bbox[1] + 1)
+        monkeypatch.setattr(table, "identify_row", lambda _y: first_item)
+        monkeypatch.setattr(tk.Menu, "tk_popup", lambda _self, _x, _y: None)
+        event = SimpleNamespace(x=5, y=5, x_root=5, y_root=5)
 
         app._on_table_right_click(table, event)  # type: ignore[arg-type]
 

@@ -112,6 +112,7 @@ class XJJDesktopApp:
 
         self._last_scan_dir: str | None = None
         self._log_max_lines = 2000
+        self._ignore_query_trace = False
 
         self._init_styles()
         self._build_layout()
@@ -303,11 +304,19 @@ class XJJDesktopApp:
 
         def _on_query_focus_in(_event):
             if self.query_var.get() == self.query_placeholder:
-                self.query_var.set("")
+                self._ignore_query_trace = True
+                try:
+                    self.query_var.set("")
+                finally:
+                    self._ignore_query_trace = False
 
         def _on_query_focus_out(_event):
             if not self.query_var.get().strip():
-                self.query_var.set(self.query_placeholder)
+                self._ignore_query_trace = True
+                try:
+                    self.query_var.set(self.query_placeholder)
+                finally:
+                    self._ignore_query_trace = False
 
         entry.bind("<FocusIn>", _on_query_focus_in)
         entry.bind("<FocusOut>", _on_query_focus_out)
@@ -343,6 +352,8 @@ class XJJDesktopApp:
 
         # 搜索逻辑
         def do_search_live():
+            if self._ignore_query_trace:
+                return
             keyword = self.query_var.get().strip()
             if not keyword or keyword == self.query_placeholder:
                 self._render_table(table, [])
@@ -817,7 +828,10 @@ class XJJDesktopApp:
         for item in table.get_children():
             table.delete(item)
         if not rows:
-            columns = list(getattr(table, "columns", ())) or ["video"]
+            try:
+                columns = list(table["columns"])
+            except Exception:
+                columns = ["video"]
             empty_values = [""] * len(columns)
             empty_values[0] = "暂无数据"
             table.insert("", tk.END, values=empty_values)
@@ -871,6 +885,37 @@ class XJJDesktopApp:
         try: return float(text)
         except: return 0.0
 
+    def _parse_duration_for_sorting(self, value) -> int:
+        if not isinstance(value, str):
+            return 0
+        text = value.strip()
+        if not text:
+            return 0
+        m = re.fullmatch(r"(\d+):(\d{1,2}):(\d{1,2})", text)
+        if m:
+            h, mm, ss = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            return h * 3600 + mm * 60 + ss
+        m = re.fullmatch(r"(\d{1,2}):(\d{1,2})", text)
+        if m:
+            mm, ss = (int(m.group(1)), int(m.group(2)))
+            return mm * 60 + ss
+        try:
+            return int(float(text))
+        except Exception:
+            return 0
+
+    def _parse_resolution_for_sorting(self, value) -> tuple[int, int]:
+        if not isinstance(value, str):
+            return (0, 0)
+        text = value.strip().lower().replace("×", "x")
+        m = re.search(r"(\d+)\s*x\s*(\d+)", text)
+        if not m:
+            return (0, 0)
+        try:
+            return (int(m.group(1)), int(m.group(2)))
+        except Exception:
+            return (0, 0)
+
     def _sort_results_by_file_size_desc(self, rows: list[dict]) -> list[dict]:
         try:
             return sorted(rows, key=lambda r: self._parse_file_size_for_sorting(r.get("file_size")), reverse=True)
@@ -892,6 +937,8 @@ class XJJDesktopApp:
             idx = columns.index(column_key)
             val = values[idx]
             if column_key == "file_size": return self._parse_file_size_for_sorting(val)
+            if column_key == "duration": return self._parse_duration_for_sorting(val)
+            if column_key == "resolution": return self._parse_resolution_for_sorting(val)
             return val
 
         sorted_items = sorted(items, key=key_for, reverse=not ascending)
@@ -960,6 +1007,7 @@ class XJJDesktopApp:
         if not file_path: return
         
         menu = tk.Menu(self.root, tearoff=0)
+        setattr(table, "_context_menu", menu)
         video_label = row.get("video") or row.get("filename") or ""
         
         menu.add_command(label="标记为喜欢", command=lambda: self._set_row_preference(table, item, video_label, "like"))
@@ -971,7 +1019,10 @@ class XJJDesktopApp:
         for name, path in players.items():
             menu.add_command(label=name, command=lambda p=path: self._play_video_with_player(Path(file_path), p))
             
-        menu.tk_popup(event.x_root, event.y_root)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        except Exception:
+            return
 
     def _set_row_preference(self, table: ttk.Treeview, item_id: str, video_code: str, status: str | None) -> None:
         try: set_video_preference(video_code, status)

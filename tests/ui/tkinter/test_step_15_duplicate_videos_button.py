@@ -27,17 +27,27 @@ def _find_toplevel(root: tk.Tk, title: str):
 
 
 def _find_treeview(widget: tk.Widget):
-    try:
-        children = widget.winfo_children()
-    except Exception:
-        return None
-    for child in children:
-        if isinstance(child, ttk.Treeview):
-            return child
-        nested = _find_treeview(child)
-        if nested is not None:
-            return nested
-    return None
+    matches: list[ttk.Treeview] = []
+
+    def walk(w: tk.Widget):
+        try:
+            children = w.winfo_children()
+        except Exception:
+            return
+        for child in children:
+            if isinstance(child, ttk.Treeview):
+                matches.append(child)
+            walk(child)
+
+    walk(widget)
+    for tv in matches:
+        try:
+            cols = list(tv["columns"])
+        except Exception:
+            cols = []
+        if "file_path" in cols:
+            return tv
+    return matches[0] if matches else None
 
 
 def test_maintain_duplicate_videos_button_opens_window_and_sorts(monkeypatch, tmp_path: Path):
@@ -50,10 +60,6 @@ def test_maintain_duplicate_videos_button_opens_window_and_sorts(monkeypatch, tm
     try:
         app = XJJDesktopApp()
         app.show_page("maintain")
-
-        # 切换到“旧视频管理” Tab
-        # 我们可以通过点击按钮或者直接调用 switch_tab (如果在 app 中可访问)
-        # 这里尝试点击按钮
         btn_manage = _find_button_by_text(app.pages["maintain"], "旧视频管理")
         assert btn_manage is not None, "未找到“旧视频管理”按钮"
         btn_manage.invoke()
@@ -64,8 +70,7 @@ def test_maintain_duplicate_videos_button_opens_window_and_sorts(monkeypatch, tm
 
         f1 = tmp_path / "dup1.mp4"
         f2 = tmp_path / "dup2.mp4"
-        f3 = tmp_path / "unique.mp4"
-        for f in (f1, f2, f3):
+        for f in (f1, f2):
             f.write_bytes(b"0")
 
         # 模拟 duplicate_videos 返回结果
@@ -74,23 +79,17 @@ def test_maintain_duplicate_videos_button_opens_window_and_sorts(monkeypatch, tm
             {"video": "DUP-002", "tags": "", "file_path": str(f2), "file_size": "100M", "duration": "00:01:00", "resolution": ""},
         ]
 
-        # Mock VideoService class entirely to avoid instantiation issues (DB connection etc)
         class MockVideoService:
             def __init__(self, db_path=None):
                 pass
             def duplicate_videos(self, ensure_accessible=True):
                 return rows
         
-        # Patch the class in ui.services module
-        # Note: app.py imports it as 'from ui.services import VideoService' inside the worker
-        # So we must patch it in ui.services
         monkeypatch.setattr("ui.services.VideoService", MockVideoService)
 
         button.invoke()
         
-        # 等待表格更新（原设计为弹窗，现改为在当前页显示）
         import time
-        start_time = time.time()
         table = _find_treeview(app.pages["maintain"])
         assert table is not None, "未找到结果表格"
         
@@ -110,9 +109,11 @@ def test_maintain_duplicate_videos_button_opens_window_and_sorts(monkeypatch, tm
         values0 = table.item(item_ids[0], "values")
         values1 = table.item(item_ids[1], "values")
 
-        # 验证排序（按文件大小降序，虽然这里都一样）
-        assert values0[3] == "100M"
-        assert values1[3] == "100M"
+        columns = list(table["columns"])
+        assert "file_size" in columns
+        idx = columns.index("file_size")
+        assert values0[idx] == "100M"
+        assert values1[idx] == "100M"
 
     finally:
         if app is not None:

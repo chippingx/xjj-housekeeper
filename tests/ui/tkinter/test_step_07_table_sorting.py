@@ -141,7 +141,7 @@ def test_sort_by_duration_and_resolution():
         ]
 
         app._render_table(table, rows)
-        app.root.update() # Ensure table is rendered and columns are known
+        app.root.update()
 
         # 按时长升序：5 分钟, 10 分钟, 60 分钟
         app._sort_table(table, "duration")
