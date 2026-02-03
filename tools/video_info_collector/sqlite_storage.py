@@ -1380,6 +1380,39 @@ class SQLiteStorage:
         rows = cursor.fetchall()
         return [row['tag'] for row in rows]
 
+    def update_video_tags(self, video_id: int, tags: List[str]) -> bool:
+        """
+        更新视频标签（全量替换）
+        
+        Args:
+            video_id: 视频ID
+            tags: 新的标签列表
+            
+        Returns:
+            bool: 是否成功
+        """
+        try:
+            cursor = self.connection.cursor()
+            
+            # 1. 删除旧标签
+            cursor.execute("DELETE FROM video_tags WHERE video_id = ?", (video_id,))
+            
+            # 2. 插入新标签
+            if tags:
+                for tag in tags:
+                    tag = tag.strip()
+                    if tag:
+                        cursor.execute("""
+                            INSERT INTO video_tags (video_id, tag)
+                            VALUES (?, ?)
+                        """, (video_id, tag))
+            
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"更新标签失败: {e}")
+            return False
+
     def load_videos_from_csv(self, csv_path: str) -> List[VideoInfo]:
         """
         从CSV文件加载视频信息

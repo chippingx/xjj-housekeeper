@@ -27,22 +27,43 @@ def test_search_videos_supports_tag_keyword(tmp_path: Path):
         INSERT INTO video_info (file_path, filename, file_size, duration_formatted, resolution, created_time, video_code)
         VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
         """,
-        ("/tmp/tst641.mp4", "TST-641.mp4", 100 * 1024 * 1024, "00:10:00", "1920x1080", "TST-641"),
+        ("/tmp/tag-test.mp4", "TAG-TEST.mp4", 100 * 1024 * 1024, "00:10:00", "1920x1080", "TAG-TEST"),
     )
     video_id = cur.lastrowid
 
     # 为该视频插入两个标签
-    cur.execute("INSERT INTO video_tags (video_id, tag) VALUES (?, ?)", (video_id, "白峰美羽"))
+    cur.execute("INSERT INTO video_tags (video_id, tag) VALUES (?, ?)", (video_id, "示例标签A"))
     cur.execute("INSERT INTO video_tags (video_id, tag) VALUES (?, ?)", (video_id, "办公室"))
     conn.commit()
 
+    # 初始化 movie_actress_works 表
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS movie_actress_works (
+            actress_name TEXT NOT NULL,
+            video_code TEXT NOT NULL,
+            release_date TEXT,
+            title TEXT,
+            link TEXT,
+            source TEXT,
+            fetched_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            other_name1 TEXT,
+            other_name2 TEXT,
+            other_name3 TEXT,
+            PRIMARY KEY (actress_name, video_code)
+        )
+        """
+    )
+    conn.commit()
+
     # 按标签关键字搜索
-    results = service.search_videos("白峰美羽")
+    results = service.search_videos("示例标签A")
     assert results, "按标签搜索应返回结果"
     # 只插入了一条，因此应返回一条记录，且标签文本包含我们的标签
     result = results[0]
-    assert result["video"] == "TST-641"
-    assert "白峰美羽" in (result.get("tags") or "")
+    assert result["video"] == "TAG-TEST"
+    assert "示例标签A" in (result.get("tags") or "")
 
     # 另一标签同样可命中
     results2 = service.search_videos("办公室")

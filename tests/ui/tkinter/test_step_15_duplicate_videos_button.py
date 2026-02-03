@@ -18,6 +18,29 @@ def _find_button_by_text(widget: tk.Widget, text: str):
             return nested
     return None
 
+def _find_notebook(widget: tk.Widget):
+    try:
+        children = widget.winfo_children()
+    except Exception:
+        return None
+    for child in children:
+        if isinstance(child, ttk.Notebook):
+            return child
+        nested = _find_notebook(child)
+        if nested is not None:
+            return nested
+    return None
+
+def _select_tab_by_text(widget: tk.Widget, text: str):
+    notebook = _find_notebook(widget)
+    if notebook is None:
+        return False
+    for tab_id in notebook.tabs():
+        if notebook.tab(tab_id, "text") == text:
+            notebook.select(tab_id)
+            return True
+    return False
+
 
 def _find_toplevel(root: tk.Tk, title: str):
     for child in root.winfo_children():
@@ -60,9 +83,7 @@ def test_maintain_duplicate_videos_button_opens_window_and_sorts(monkeypatch, tm
     try:
         app = XJJDesktopApp()
         app.show_page("maintain")
-        btn_manage = _find_button_by_text(app.pages["maintain"], "问题视频")
-        assert btn_manage is not None, "未找到“问题视频”按钮"
-        btn_manage.invoke()
+        assert _select_tab_by_text(app.pages["maintain"], "问题视频")
         # app.root.update()
 
         button = _find_button_by_text(app.pages["maintain"], "重复视频")

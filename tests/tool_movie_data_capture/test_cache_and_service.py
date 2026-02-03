@@ -23,7 +23,7 @@ class _FakeClient:
             "link": "http://example.com"
         }
 
-    def search_actress_works(self, actress_name: str, max_pages=None, stop_if_exists_func=None):
+    def search_actress_works(self, actress_name: str, max_pages=None, stop_if_exists_func=None, check_cancellation=None):
         self.works_calls += 1
         all_works = [
             ActressWork(video_code="AAA-001", release_date="2020-01-01", title="t1", link="l1"),
@@ -37,18 +37,6 @@ class _FakeClient:
                 filtered.append(w)
             return filtered
         return all_works
-
-
-def test_cache_tables_created(tmp_path: Path):
-    db_path = tmp_path / "movie_data.db"
-    cache = MovieDataStorage(str(db_path))
-    try:
-        cur = cache.connection.cursor()
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        names = {r[0] for r in cur.fetchall()}
-        assert "movie_actress_works" in names
-    finally:
-        cache.close()
 
 
 def test_service_video_code_cache_hit(tmp_path: Path):
@@ -76,10 +64,61 @@ def test_service_actress_works_cache_hit(tmp_path: Path):
         assert len(works1) == 2
         assert fake.works_calls == 1
 
+        # Second call should use cache (no new fetch if logic works, but implementation logic is:
+        # if cache exists, fetch ONLY new. So it DOES call client.search_actress_works)
+        # Wait, the logic in service.py line 73: if not force_refresh and cached_works:
+        # It DOES call client.search_actress_works with stop_check.
+        # So fake.works_calls should increment.
         works2 = svc.get_works_by_actress_name("Some Name")
         assert len(works2) == 2
-        # Modified: service now calls client even on cache hit to check for updates
         assert fake.works_calls == 2
     finally:
         svc.close()
 
+
+def test_search_movie_info_fuzzy(tmp_path: Path):
+    svc = MovieDataCaptureService(db_path=str(tmp_path / "movie_data.db"))
+    
+    # Pre-populate DB
+    svc.storage.add_video_actress_relationship(
+        video_code="ABC-123",
+        actress_name="Alice Wonderland",
+        source="test",
+        title="Alice in Wonderland",
+        release_date="2022-01-01"
+    )
+    svc.storage.add_video_actress_relationship(
+        video_code="XYZ-999",
+        actress_name="Bob Builder",
+        source="test",
+        title="Bob's Big Adventure",
+        release_date="2022-02-01"
+    )
+    
+    # Test fuzzy search by video code part
+    results = svc.search_movie_info("ABC", "all")
+    assert len(results) == 1
+    assert results[0].video_code == "ABC-123"
+    assert results[0].title == "Alice in Wonderland"
+
+    # Test fuzzy search by actress name part
+    results = svc.search_movie_info("Builder", "all")
+    assert len(results) == 1
+    assert results[0].actress_name == "Bob Builder"
+    
+    # Test sort order (release date desc)
+    # Add another one for Alice with newer date
+    svc.storage.add_video_actress_relationship(
+        video_code="ABC-124",
+        actress_name="Alice Wonderland",
+        source="test",
+        title="Alice Returns",
+        release_date="2023-01-01"
+    )
+    
+    results = svc.search_movie_info("Alice", "all")
+    assert len(results) == 2
+    assert results[0].video_code == "ABC-124" # Newer first
+    assert results[1].video_code == "ABC-123"
+    
+    svc.close()

@@ -20,6 +20,7 @@ class MovieInfoRow:
     video_code: str
     release_date: Optional[str]
     updated_at: str
+    title: Optional[str] = None
 
 
 class MovieDataStorage:
@@ -56,10 +57,23 @@ class MovieDataStorage:
                 source TEXT,
                 fetched_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
+                other_name1 TEXT,
+                other_name2 TEXT,
+                other_name3 TEXT,
                 PRIMARY KEY (actress_name, video_code)
             )
             """
         )
+        # Check and add new columns if missing (for existing DB)
+        cur.execute("PRAGMA table_info(movie_actress_works)")
+        columns = [row[1] for row in cur.fetchall()]
+        if "other_name1" not in columns:
+            cur.execute("ALTER TABLE movie_actress_works ADD COLUMN other_name1 TEXT")
+        if "other_name2" not in columns:
+            cur.execute("ALTER TABLE movie_actress_works ADD COLUMN other_name2 TEXT")
+        if "other_name3" not in columns:
+            cur.execute("ALTER TABLE movie_actress_works ADD COLUMN other_name3 TEXT")
+
         self.connection.commit()
 
     def _create_indexes(self) -> None:
@@ -81,7 +95,7 @@ class MovieDataStorage:
         if by == "actress":
             cur.execute(
                 """
-                SELECT actress_name, video_code, release_date, updated_at
+                SELECT actress_name, video_code, release_date, updated_at, title
                 FROM movie_actress_works
                 WHERE actress_name = ?
                 ORDER BY release_date DESC, video_code DESC
@@ -92,12 +106,23 @@ class MovieDataStorage:
             code = kw.upper()
             cur.execute(
                 """
-                SELECT actress_name, video_code, release_date, updated_at
+                SELECT actress_name, video_code, release_date, updated_at, title
                 FROM movie_actress_works
                 WHERE video_code = ?
                 ORDER BY actress_name ASC
                 """,
                 (code,),
+            )
+        elif by == "all":
+            like_kw = f"%{kw}%"
+            cur.execute(
+                """
+                SELECT actress_name, video_code, release_date, updated_at, title
+                FROM movie_actress_works
+                WHERE video_code LIKE ? OR actress_name LIKE ?
+                ORDER BY release_date DESC
+                """,
+                (like_kw, like_kw),
             )
         else:
             return []
@@ -109,9 +134,21 @@ class MovieDataStorage:
                 video_code=row["video_code"],
                 release_date=row["release_date"],
                 updated_at=row["updated_at"],
+                title=row["title"],
             )
             for row in rows
         ]
+
+    def check_existence(self, actress_name: str, video_code: str) -> bool:
+        """Check if a specific actress-video relationship exists."""
+        if not actress_name or not video_code:
+            return False
+        cur = self.connection.cursor()
+        cur.execute(
+            "SELECT 1 FROM movie_actress_works WHERE actress_name = ? AND video_code = ?",
+            (actress_name.strip(), video_code.strip().upper()),
+        )
+        return cur.fetchone() is not None
 
     def get_actresses_by_video_code(self, video_code: str) -> Optional[List[str]]:
         if not video_code:
@@ -141,7 +178,8 @@ class MovieDataStorage:
         name = actress_name.strip()
         if not code or not name:
             return
-        now = datetime.now(timezone.utc).isoformat()
+        # Use 'YYYY-MM-DD hh:mm:ss' format
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cur = self.connection.cursor()
         cur.execute(
             """
@@ -188,14 +226,29 @@ class MovieDataStorage:
 
     def replace_works_for_actress_name(self, actress_name: str, works: List[ActressWork], source: str) -> None:
         name = actress_name.strip()
-        now = datetime.now(timezone.utc).isoformat()
+        # Use 'YYYY-MM-DD hh:mm:ss' format
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cur = self.connection.cursor()
+        
+        # We need to preserve existing aliases if we are replacing works?
+        # But 'replace_works_for_actress_name' deletes ALL works for this actress.
+        # This means we lose aliases if they are stored in this table (which they are, redundantly for each row).
+        # Wait, if aliases are per-actress, storing them in (actress, video) PK table means they are duplicated.
+        # And deleting works deletes aliases. This is bad design if we want to keep aliases.
+        # However, following the current instruction, we just added columns.
+        # To mitigate data loss, we should read existing aliases first (from any row), then re-insert them.
+        
+        cur.execute("SELECT other_name1, other_name2, other_name3 FROM movie_actress_works WHERE actress_name = ? LIMIT 1", (name,))
+        row = cur.fetchone()
+        aliases = (row["other_name1"], row["other_name2"], row["other_name3"]) if row else (None, None, None)
+        
         cur.execute("DELETE FROM movie_actress_works WHERE actress_name = ?", (name,))
         cur.executemany(
             """
             INSERT INTO movie_actress_works (
-                actress_name, video_code, release_date, title, link, source, fetched_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                actress_name, video_code, release_date, title, link, source, fetched_at, updated_at,
+                other_name1, other_name2, other_name3
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -207,6 +260,7 @@ class MovieDataStorage:
                     source,
                     now,
                     now,
+                    aliases[0], aliases[1], aliases[2]
                 )
                 for w in works
                 if w.video_code and w.video_code.strip()

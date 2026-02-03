@@ -9,3 +9,5 @@ rename_rules.yaml
 output/
 .vscode
 integration_test_temp
+tools/movie_data_capture/impl/
+*.pyc

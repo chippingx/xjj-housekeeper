@@ -7,7 +7,7 @@ def test_validation_api_and_constants_present():
 
     # app 常量与占位文案
     assert hasattr(app, "QUERY_PLACEHOLDER")
-    assert app.QUERY_PLACEHOLDER == "按视频编号精确查询（示例：ABC-123）"
+    assert app.QUERY_PLACEHOLDER == "按视频编号精确查询（示例：CODE-EXAMPLE）"
     assert hasattr(app, "QUERY_EMPTY_HINT")
     assert app.QUERY_EMPTY_HINT == "请输入关键词进行查询"
     assert hasattr(app, "QUERY_INVALID_HINT")

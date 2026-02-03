@@ -129,7 +129,7 @@ def test_random_pick_uses_service_and_renders_rows(monkeypatch):
 
         # 至少应调用一次，并使用我们预期的参数
         assert calls, "random_videos 未被调用"
-        assert calls[0]["limit"] == 20
+        assert calls[0]["limit"] == app.settings.page_size
         assert calls[0]["ensure_accessible"] is True
 
         # 表格中应渲染出我们的两条随机数据

@@ -20,11 +20,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     by_code = sub.add_parser("by-code", help="根据视频号查询女演员名字")
-    by_code.add_argument("video_code", help="视频号，如 TST-001")
+    by_code.add_argument("video_code", help="视频号，如 CODE-EXAMPLE")
     by_code.add_argument("--force-refresh", action="store_true", help="忽略缓存，强制重新抓取并写入缓存")
 
     by_actress = sub.add_parser("by-actress", help="根据女演员名字列出作品清单")
-    by_actress.add_argument("actress_name", help="女演员名字，如 三上悠亜")
+    by_actress.add_argument("actress_name", help="女演员名字，如 示例艺人")
     by_actress.add_argument("--force-refresh", action="store_true", help="忽略缓存，强制重新抓取并写入缓存")
 
     return parser

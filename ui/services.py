@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import os
 import sys
 from pathlib import Path
@@ -63,97 +63,122 @@ class VideoService:
             self.merge_manager = SmartMergeManager(self.storage)
     
     def search_videos(self, keyword: str) -> List[Dict[str, str]]:
-        """搜索视频（支持按视频码和标签模糊匹配，输入即搜）。"""
+        """搜索视频（兼容旧接口，只返回列表）。"""
+        result = self.search_videos_paged(keyword, page_size=100)
+        return result.get("items", [])
+
+    def search_videos_paged(
+        self, 
+        keyword: str, 
+        preference: str = "all", 
+        page: int = 1, 
+        page_size: int = 100
+    ) -> Dict[str, Any]:
+        """搜索视频（支持分页和偏好筛选）。
+        
+        Args:
+            keyword: 搜索关键词
+            preference: 偏好筛选 ('all', 'like', 'dislike', 'none')
+            page: 页码 (从1开始)
+            page_size: 每页数量
+            
+        Returns:
+            Dict: {'items': [...], 'total': int, 'page': int, 'page_size': int}
+        """
         try:
             self._ensure_storage()
 
-            # 空或非法输入直接返回空结果，便于“输入即搜”体验
-            if not isinstance(keyword, str):
-                return []
-
-            search_term = keyword.strip()
-            if search_term == "":
-                return []
+            search_term = str(keyword).strip() if keyword else ""
+            
+            # 如果没有搜索词且没有偏好筛选，直接返回空（避免列出所有视频）
+            if search_term == "" and (not preference or preference == "all"):
+                return {"items": [], "total": 0, "page": page, "page_size": page_size}
 
             cursor = self.storage.connection.cursor()
-            # 检查列是否存在，避免早期库缺少video_code导致查询失败
-            cursor.execute("PRAGMA table_info(video_info)")
-            columns = [col[1] for col in cursor.fetchall()]
-
-            # 检查是否存在标签表，避免早期库报错
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='video_tags'"
-            )
-            has_video_tags = cursor.fetchone() is not None
-
-            like_keyword = f"%{search_term}%"
-
-            if 'video_code' in columns:
-                if has_video_tags:
-                    # 优先按视频码匹配，同时支持按标签关键字匹配
-                    cursor.execute(
-                        """
-                        SELECT id, video_code, filename, file_path, file_size, duration_formatted, resolution, updated_time
-                        FROM video_info
-                        WHERE video_code LIKE ?
-                           OR id IN (
-                                SELECT video_id
-                                FROM video_tags
-                                WHERE tag LIKE ?
-                           )
-                        ORDER BY updated_time DESC
-                        LIMIT 100
-                        """,
-                        (like_keyword, like_keyword),
-                    )
+            
+            # 1. 动态构建查询条件
+            conditions = []
+            params = []
+            
+            # 1.1 关键词条件
+            if search_term:
+                # 检查列和表是否存在
+                cursor.execute("PRAGMA table_info(video_info)")
+                columns = [col[1] for col in cursor.fetchall()]
+                
+                cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='video_tags'"
+                )
+                has_video_tags = cursor.fetchone() is not None
+                
+                like_keyword = f"%{search_term}%"
+                
+                kw_parts = []
+                
+                if 'video_code' in columns:
+                    kw_parts.append("video_code LIKE ?")
+                    params.append(like_keyword)
+                    
+                    if has_video_tags:
+                        kw_parts.append("id IN (SELECT video_id FROM video_tags WHERE tag LIKE ?)")
+                        params.append(like_keyword)
+                        
+                    # 尝试关联女艺人表
+                    kw_parts.append("video_code IN (SELECT video_code FROM movie_actress_works WHERE actress_name LIKE ?)")
+                    params.append(like_keyword)
                 else:
-                    cursor.execute(
-                        """
-                        SELECT id, video_code, filename, file_path, file_size, duration_formatted, resolution, updated_time
-                        FROM video_info
-                        WHERE video_code LIKE ?
-                        ORDER BY updated_time DESC
-                        LIMIT 100
-                        """,
-                        (like_keyword,),
-                    )
-            else:
-                if has_video_tags:
-                    cursor.execute(
-                        """
-                        SELECT id, NULL AS video_code, filename, file_path, file_size, duration_formatted, resolution, updated_time
-                        FROM video_info
-                        WHERE filename LIKE ?
-                           OR file_path LIKE ?
-                           OR id IN (
-                                SELECT video_id
-                                FROM video_tags
-                                WHERE tag LIKE ?
-                           )
-                        ORDER BY updated_time DESC
-                        LIMIT 100
-                        """,
-                        (like_keyword, like_keyword, like_keyword),
-                    )
+                    kw_parts.append("filename LIKE ?")
+                    params.append(like_keyword)
+                    kw_parts.append("file_path LIKE ?")
+                    params.append(like_keyword)
+                
+                conditions.append(f"({' OR '.join(kw_parts)})")
+            
+            # 1.2 偏好条件
+            if preference and preference != "all":
+                if preference == "none":
+                    conditions.append("video_code NOT IN (SELECT video_code FROM video_preferences)")
                 else:
-                    cursor.execute(
-                        """
-                        SELECT id, NULL AS video_code, filename, file_path, file_size, duration_formatted, resolution, updated_time
-                        FROM video_info
-                        WHERE filename LIKE ? OR file_path LIKE ?
-                        ORDER BY updated_time DESC
-                        LIMIT 100
-                        """,
-                        (like_keyword, like_keyword),
-                    )
-
-            return self._rows_to_results(cursor.fetchall())
+                    conditions.append("video_code IN (SELECT video_code FROM video_preferences WHERE status = ?)")
+                    params.append(preference)
+            
+            where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+            
+            # 2. 查询总数
+            count_sql = f"SELECT COUNT(*) FROM video_info{where_clause}"
+            cursor.execute(count_sql, params)
+            total = cursor.fetchone()[0]
+            
+            # 3. 查询分页数据
+            offset = (page - 1) * page_size
+            
+            # 选择列 (与原逻辑保持一致，但确保 video_code 存在)
+            # 为了简单，我们选择固定的列集合，兼容性处理在 _rows_to_results
+            select_sql = """
+                SELECT id, video_code, filename, file_path, file_size, duration_formatted, resolution, updated_time
+                FROM video_info
+            """
+            
+            order_sql = " ORDER BY updated_time DESC"
+            limit_sql = " LIMIT ? OFFSET ?"
+            
+            full_sql = f"{select_sql}{where_clause}{order_sql}{limit_sql}"
+            cursor.execute(full_sql, params + [page_size, offset])
+            
+            items = self._rows_to_results(cursor.fetchall())
+            
+            return {
+                "items": items,
+                "total": total,
+                "page": page,
+                "page_size": page_size
+            }
 
         except Exception as e:
             self.error_handler.handle_database_error(
                 f"搜索视频失败: {e}", self.db_path, "search"
             )
-            return []
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
 
     def _rows_to_results(self, rows) -> List[Dict[str, str]]:
         """将数据库行转换为统一的 UI 结果结构。"""
@@ -208,9 +233,25 @@ class VideoService:
                     preference_status = self.storage.get_video_preference(code_key)
             except Exception:
                 preference_status = None
+            
+            # Fetch actress info
+            actress_label = ""
+            try:
+                if video_label:
+                    # Try direct query since self.storage.connection is available.
+                    cur = self.storage.connection.cursor()
+                    cur.execute("SELECT actress_name FROM movie_actress_works WHERE video_code = ?", (video_label,))
+                    act_rows = cur.fetchall()
+                    if act_rows:
+                         names = sorted(list(set(r[0] for r in act_rows if r[0])))
+                         actress_label = ", ".join(names)
+            except Exception:
+                actress_label = ""
 
             results.append({
+                'id': video_id,
                 'video': video_label,
+                'actress': actress_label,
                 'tags': tags_label,
                 'file_path': get_val('file_path'),
                 'file_size': file_size_formatted,
@@ -264,6 +305,81 @@ class VideoService:
         except Exception as e:
             self.error_handler.handle_database_error(f"随机挑选视频失败: {e}", self.db_path, "random_videos")
             return []
+
+    def latest_videos_paged(
+        self, days: int = 14, page: int = 1, page_size: int = 100, ensure_accessible: bool = True
+    ) -> Dict[str, Any]:
+        """获取最近更新的视频（分页支持）。"""
+        try:
+            self._ensure_storage()
+            cursor = self.storage.connection.cursor()
+            
+            # 1. 查询总数 (考虑天数限制)
+            # SQLite 的 datetime('now', '-14 days')
+            # updated_time 是字符串格式 "YYYY-MM-DD HH:MM:SS" 或类似
+            # 如果 updated_time 是字符串，可以直接比较
+            
+            date_filter = f"date('now', '-{days} days')"
+            
+            # 检查列
+            cursor.execute("PRAGMA table_info(video_info)")
+            columns = [col[1] for col in cursor.fetchall()]
+            
+            where_clause = f"WHERE updated_time >= datetime('now', '-{days} days')"
+            
+            # 如果需要 ensure_accessible，可能需要遍历检查？
+            # 这在大数据量下分页时比较麻烦，因为分页是基于数据库的。
+            # 如果必须 ensure_accessible，可能得先查出来再过滤，但这会破坏分页。
+            # 这里的策略：如果 ensure_accessible=True，我们尽量在数据库层面做不了太多，
+            # 只能接受“可能会显示不可访问的文件”或者“在显示时标记不可访问”。
+            # 但为了保持兼容，如果用户非要 ensure_accessible，我们可以在 fetch 后过滤，
+            # 但这样会导致每页数量不一致。
+            # 考虑到“最新视频”通常是刚扫进来的，大概率是存在的。
+            # 建议：分页模式下，忽略 ensure_accessible 的严格过滤，或者仅作为 UI 提示。
+            # 但为了严谨，我们可以先不做 ensure_accessible 的 IO 检查，只做数据库查询。
+            
+            # Count
+            count_sql = f"SELECT COUNT(*) FROM video_info {where_clause}"
+            cursor.execute(count_sql)
+            total = cursor.fetchone()[0]
+            
+            # Paged Query
+            offset = (page - 1) * page_size
+            
+            # Select columns
+            cols_sql = "id, video_code, filename, file_path, file_size, duration_formatted, resolution, updated_time"
+            if 'video_code' not in columns:
+                cols_sql = "id, NULL as video_code, filename, file_path, file_size, duration_formatted, resolution, updated_time"
+                
+            query = f"""
+                SELECT {cols_sql}
+                FROM video_info
+                {where_clause}
+                ORDER BY updated_time DESC
+                LIMIT ? OFFSET ?
+            """
+            
+            cursor.execute(query, (page_size, offset))
+            rows = cursor.fetchall()
+            
+            items = self._rows_to_results(rows)
+            
+            # 如果确实需要过滤不存在的文件，items 会变少，total 也会不准。
+            # 在分页场景下，通常不建议做这种后置过滤。
+            # 我们保留原样返回。
+            
+            return {
+                "items": items,
+                "total": total,
+                "page": page,
+                "page_size": page_size
+            }
+
+        except Exception as e:
+            self.error_handler.handle_database_error(
+                f"获取最新视频失败: {e}", self.db_path, "latest_videos_paged"
+            )
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
 
     def latest_videos(self, days: int = 14, limit: int = 20, ensure_accessible: bool = True) -> List[Dict[str, str]]:
         """随机返回最近若干天内修改过的视频。"""
@@ -593,6 +709,19 @@ class VideoService:
                 f"获取视频偏好失败: {e}", self.db_path, "get_video_preference"
             )
             return None
+    
+    def update_video_tags(self, video_id: int, tags: List[str]) -> bool:
+        """更新视频标签。"""
+        try:
+            self._ensure_storage()
+            if not hasattr(self.storage, "update_video_tags"):
+                return False
+            return self.storage.update_video_tags(video_id, tags)
+        except Exception as e:
+            self.error_handler.handle_database_error(
+                f"更新视频标签失败: {e}", self.db_path, "update_video_tags"
+            )
+            return False
 
 
 # 创建全局服务实例
@@ -602,6 +731,10 @@ video_service = VideoService()
 def search_videos(keyword: str) -> List[Dict[str, str]]:
     """搜索视频 - 兼容性包装函数"""
     return video_service.search_videos(keyword)
+
+def search_videos_paged(keyword: str, preference: str = "all", page: int = 1, page_size: int = 100) -> Dict[str, Any]:
+    """搜索视频（分页） - 兼容性包装函数"""
+    return video_service.search_videos_paged(keyword, preference, page, page_size)
 
 
 def random_videos(limit: int = 20, ensure_accessible: bool = True) -> List[Dict[str, str]]:
@@ -613,6 +746,10 @@ def latest_videos(days: int = 14, limit: int = 20, ensure_accessible: bool = Tru
     """随机挑选最近若干天内修改过的视频 - 兼容性包装函数"""
     return video_service.latest_videos(days=days, limit=limit, ensure_accessible=ensure_accessible)
 
+
+def latest_videos_paged(days: int = 14, page: int = 1, page_size: int = 100, ensure_accessible: bool = True) -> Dict[str, Any]:
+    """获取最新视频（分页） - 兼容性包装函数"""
+    return video_service.latest_videos_paged(days, page, page_size, ensure_accessible)
 
 def broken_videos(ensure_accessible: bool = True) -> List[Dict[str, str]]:
     """获取损坏视频 - 兼容性包装函数"""
@@ -627,3 +764,7 @@ def start_maintain(path: str, labels: Optional[str] = None, logical_path: Option
 def set_video_preference(video_code: str, status: Optional[str]) -> None:
     """设置视频偏好状态 - 兼容性包装函数"""
     video_service.set_video_preference(video_code, status)
+
+def update_video_tags(video_id: int, tags: List[str]) -> bool:
+    """更新视频标签 - 兼容性包装函数"""
+    return video_service.update_video_tags(video_id, tags)
