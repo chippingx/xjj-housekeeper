@@ -109,7 +109,7 @@ class XJJDesktopApp:
         self.settings = AppSettings()
         self.root = tk.Tk()
         self.root.title(self.settings.app_title)
-        self.root.geometry("1000x640")
+        self.root.geometry("1280x800")
         self.root.configure(bg="#F7F9FC")
 
         # 颜色与样式常量
@@ -205,6 +205,26 @@ class XJJDesktopApp:
             selectforeground=[("readonly", self.colors["gray800"])]
         )
 
+    def _make_action_button(self, parent, text: str, command=None, **kwargs) -> tk.Button:
+        padx = kwargs.pop("padx", 20)
+        pady = kwargs.pop("pady", 5)
+        btn = tk.Button(
+            parent,
+            text=text,
+            command=command,
+            bg=self.colors["white"],
+            fg="black",
+            relief=tk.FLAT,
+            bd=0,
+            highlightthickness=0,
+            activebackground=self.colors["gray100"],
+            activeforeground="black",
+            padx=padx,
+            pady=pady,
+            **kwargs
+        )
+        return btn
+
     def _build_layout(self) -> None:
         # 使用 Grid 布局：左侧边栏，右侧主内容
         self.root.grid_rowconfigure(0, weight=1)
@@ -285,24 +305,6 @@ class XJJDesktopApp:
         )
         btn.pack(fill=tk.X, pady=2)
         self.nav_btns[key] = btn
-
-    def _make_action_button(self, parent, text: str, command=None, **kwargs):
-        options = {
-            "text": text,
-            "command": command,
-            "bg": self.colors["white"],
-            "fg": "black",
-            "activebackground": self.colors["gray100"],
-            "activeforeground": self.colors["gray800"],
-            "relief": tk.FLAT,
-            "bd": 0,
-            "highlightthickness": 0,
-            "padx": 20,
-            "pady": 5,
-            "cursor": "hand2",
-        }
-        options.update(kwargs)
-        return tk.Button(parent, **options)
 
     def _update_sidebar_selection(self) -> None:
         for key, btn in self.nav_btns.items():
@@ -1246,7 +1248,7 @@ class XJJDesktopApp:
         # Save Settings Logic
         tk.Frame(form, height=1, bg=self.colors["gray200"]).pack(fill=tk.X, padx=20, pady=20)
         
-        self.btn_save_settings = self._make_action_button(form, text="保存设置", font=("Helvetica", 12), pady=8)
+        self.btn_save_settings = self._make_action_button(form, text="保存设置", font=("Helvetica", 12), padx=20, pady=8)
         self.btn_save_settings.pack(anchor="w", padx=20)
         
         def check_changes(*args):
@@ -1728,6 +1730,7 @@ class XJJDesktopApp:
     def _open_tags_manager(self, table: ttk.Treeview, item_id: str, video_id: int, current_tags_str: str) -> None:
         """打开标签管理对话框"""
         dialog = tk.Toplevel(self.root)
+        dialog.withdraw()  # 先隐藏，避免闪烁
         dialog.title("管理标签")
         dialog.geometry("400x500")
         
@@ -1736,8 +1739,11 @@ class XJJDesktopApp:
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (dialog.winfo_width() // 2)
         y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (dialog.winfo_height() // 2)
         dialog.geometry(f"+{x}+{y}")
+        dialog.deiconify()  # 位置确定后再显示
+        
         dialog.transient(self.root)
         dialog.grab_set()
+        dialog.focus_set()
         
         # Parse current tags
         current_tags = set(t.strip() for t in current_tags_str.split(",") if t.strip())
@@ -1759,7 +1765,7 @@ class XJJDesktopApp:
         list_frame = tk.Frame(container, bg=self.colors["white"], relief=tk.GROOVE, bd=1)
         list_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         
-        canvas = tk.Canvas(list_frame, bg=self.colors["white"])
+        canvas = tk.Canvas(list_frame, bg=self.colors["white"], highlightthickness=0)
         scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
         scrollable_frame = tk.Frame(canvas, bg=self.colors["white"])
         
@@ -1771,8 +1777,28 @@ class XJJDesktopApp:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=1, pady=1)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Mouse wheel scrolling
+        def _on_mousewheel(event):
+            # Windows/macOS/Linux differences
+            if sys.platform == "darwin":
+                delta = -1 * event.delta
+            elif sys.platform.startswith("linux"):
+                if event.num == 4: delta = -1
+                elif event.num == 5: delta = 1
+                else: delta = 0
+            else: # Windows
+                delta = -1 * (event.delta // 120)
+            
+            canvas.yview_scroll(int(delta), "units")
+
+        # Bind wheel events to canvas and frame
+        bind_tags = ("<MouseWheel>", "<Button-4>", "<Button-5>")
+        for tag in bind_tags:
+            canvas.bind(tag, _on_mousewheel)
+            scrollable_frame.bind(tag, _on_mousewheel)
         
         # Variables to track check states
         check_vars = {}

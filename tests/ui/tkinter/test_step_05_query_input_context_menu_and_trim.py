@@ -35,12 +35,12 @@ def test_query_input_trims_spaces_before_search(monkeypatch):
 
         seen_keywords = []
 
-        def fake_search_videos(keyword: str):
+        def fake_search_videos_paged(keyword: str, preference: str = "all", page: int = 1, page_size: int = 100):
             seen_keywords.append(keyword)
-            return []
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
 
         # 打补丁到 app 模块级别的 search_videos，使查询走到我们的桩函数
-        monkeypatch.setattr("ui.tkinter.app.search_videos", fake_search_videos)
+        monkeypatch.setattr("ui.tkinter.app.search_videos_paged", fake_search_videos_paged)
 
         # 切到查询页面并找到输入框
         app.show_page("query")
@@ -61,7 +61,7 @@ def test_query_input_trims_spaces_before_search(monkeypatch):
         app.query_var.set("  DEF456  ")
 
         # 至少应有两次调用，且关键字都已去掉前后空格
-        assert seen_keywords, "search_videos 未被调用"
+        assert seen_keywords, "search_videos_paged 未被调用"
         for kw in seen_keywords:
             assert kw == kw.strip(), f"关键字前后空格未被去除: {kw!r}"
 

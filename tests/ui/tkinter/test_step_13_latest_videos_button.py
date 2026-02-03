@@ -63,19 +63,18 @@ def test_latest_videos_button_renders_sorted_by_file_size_desc(monkeypatch, tmp_
 
         calls = {}
 
-        def fake_latest_videos_paged(*, days: int = 14, page: int = 1, page_size: int = 20, ensure_accessible: bool = True):
+        def fake_latest_videos(*, days: int = 14, limit: int = 20, ensure_accessible: bool = True):
             calls["days"] = days
-            calls["page"] = page
-            calls["page_size"] = page_size
+            calls["limit"] = limit
             calls["ensure_accessible"] = ensure_accessible
-            return {"items": rows, "total": len(rows), "page": page, "page_size": page_size}
+            return rows
 
-        monkeypatch.setattr("ui.tkinter.app.latest_videos_paged", fake_latest_videos_paged)
+        monkeypatch.setattr("ui.tkinter.app.latest_videos", fake_latest_videos)
 
         button.invoke()
         app.root.update_idletasks()
 
-        assert calls == {"days": 14, "page": 1, "page_size": app.settings.page_size, "ensure_accessible": True}
+        assert calls == {"days": 14, "limit": 20, "ensure_accessible": True}
 
         item_ids = table.get_children()
         assert len(item_ids) == 3
@@ -83,12 +82,13 @@ def test_latest_videos_button_renders_sorted_by_file_size_desc(monkeypatch, tmp_
         values1 = table.item(item_ids[1], "values")
         values2 = table.item(item_ids[2], "values")
 
-        assert values0[0] == "VID-L-001"
-        assert values1[0] == "VID-L-002"
-        assert values2[0] == "VID-L-003"
+        assert values0[0] == "VID-L-002"
+        assert values1[0] == "VID-L-003"
+        assert values2[0] == "VID-L-001"
     finally:
         if app is not None:
             try:
                 app.root.destroy()
             except Exception:
                 pass
+

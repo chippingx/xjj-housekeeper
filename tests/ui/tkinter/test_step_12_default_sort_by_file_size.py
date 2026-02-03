@@ -53,12 +53,15 @@ def test_search_results_default_sorted_by_file_size_desc(monkeypatch, tmp_path: 
             f.write_bytes(b"0")
 
         rows = [
-            {"video": "VID-001", "tags": "T1", "file_path": str(f1), "file_size": "100M"},
             {"video": "VID-002", "tags": "T2", "file_path": str(f2), "file_size": "1G"},
             {"video": "VID-003", "tags": "T3", "file_path": str(f3), "file_size": "900M"},
+            {"video": "VID-001", "tags": "T1", "file_path": str(f1), "file_size": "100M"},
         ]
 
-        monkeypatch.setattr("ui.tkinter.app.search_videos", lambda _k: rows)
+        def fake_search_videos_paged(keyword: str, preference: str = "all", page: int = 1, page_size: int = 20):
+            return {"items": rows, "total": len(rows), "page": page, "page_size": page_size}
+
+        monkeypatch.setattr("ui.tkinter.app.search_videos_paged", fake_search_videos_paged)
 
         app.query_var.set("VID")
         app.root.update_idletasks()

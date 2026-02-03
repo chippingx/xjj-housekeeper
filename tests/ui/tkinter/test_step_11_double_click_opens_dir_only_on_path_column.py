@@ -56,13 +56,15 @@ def test_double_click_tags_column_does_not_open_dir(monkeypatch, tmp_path: Path)
         app.root.update()
         item_ids = table.get_children()
         assert item_ids
+        columns = list(table["columns"])
+        tags_col_id = f"#{columns.index('tags') + 1}" if "tags" in columns else "#1"
 
         play_calls: list[str] = []
 
         monkeypatch.setattr(app, "_open_file_manager", lambda _path: pytest.fail("不应打开目录"))
         monkeypatch.setattr(app, "_play_video", lambda path: play_calls.append(path))
 
-        event = _make_double_click_event(monkeypatch, table, item_ids[0], "#2")
+        event = _make_double_click_event(monkeypatch, table, item_ids[0], tags_col_id)
 
         app._on_table_double_click(table, event)  # type: ignore[arg-type]
 
@@ -105,13 +107,15 @@ def test_double_click_path_column_opens_dir(monkeypatch, tmp_path: Path):
         app.root.update()
         item_ids = table.get_children()
         assert item_ids
+        columns = list(table["columns"])
+        path_col_id = f"#{columns.index('file_path') + 1}"
 
         open_calls: list[str] = []
         play_calls: list[str] = []
 
         monkeypatch.setattr(app, "_open_file_manager", lambda path: open_calls.append(path))
         monkeypatch.setattr(app, "_play_video", lambda path: play_calls.append(path))
-        event = _make_double_click_event(monkeypatch, table, item_ids[0], "#3")
+        event = _make_double_click_event(monkeypatch, table, item_ids[0], path_col_id)
 
         app._on_table_double_click(table, event)  # type: ignore[arg-type]
 

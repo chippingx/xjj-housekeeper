@@ -48,7 +48,7 @@ def test_query_input_has_placeholder_and_no_label_video_code():
         assert entry is not None, "未在查询页找到输入框"
 
         # 默认值应为 placeholder 文本
-        assert app.query_var.get() == "视频号/标签"
+        assert app.query_var.get() == app.query_placeholder
 
         # 检查没有文字为“视频码”的标签控件
         def _has_label_with_text(root, text: str) -> bool:
@@ -85,18 +85,18 @@ def test_query_placeholder_does_not_trigger_search(monkeypatch):
 
         seen_keywords = []
 
-        def fake_search_videos(keyword: str):
+        def fake_search_videos_paged(keyword: str, preference: str = "all", page: int = 1, page_size: int = 100):
             seen_keywords.append(keyword)
-            return []
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
 
-        monkeypatch.setattr("ui.tkinter.app.search_videos", fake_search_videos)
+        monkeypatch.setattr("ui.tkinter.app.search_videos_paged", fake_search_videos_paged)
 
         app.show_page("query")
         # 初始时 query_var 是占位符文本
-        assert app.query_var.get() == "视频号/标签"
+        assert app.query_var.get() == app.query_placeholder
 
         # 触发一次实时搜索逻辑
-        app.query_var.set("视频号/标签")
+        app.query_var.set(app.query_placeholder)
 
         # 不应调用 search_videos
         assert not seen_keywords, "占位符文本不应触发搜索"
