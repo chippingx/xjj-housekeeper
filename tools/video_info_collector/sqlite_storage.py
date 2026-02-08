@@ -136,6 +136,25 @@ class SQLiteStorage:
             )
             """
         )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS movie_actress_works (
+                actress_name TEXT NOT NULL,
+                video_code TEXT NOT NULL,
+                release_date TEXT,
+                title TEXT,
+                link TEXT,
+                source TEXT,
+                fetched_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                other_name1 TEXT,
+                other_name2 TEXT,
+                other_name3 TEXT,
+                PRIMARY KEY (actress_name, video_code)
+            )
+            """
+        )
         
         self.connection.commit()
     
@@ -184,6 +203,13 @@ class SQLiteStorage:
         # video_preferences 表索引
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_video_pref_code ON video_preferences(video_code)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_video_pref_status ON video_preferences(status)")
+
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_movie_actress_works_actress_name ON movie_actress_works(actress_name)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_movie_actress_works_video_code ON movie_actress_works(video_code)"
+        )
         
         self.connection.commit()
     

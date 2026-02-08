@@ -69,3 +69,27 @@ def test_search_videos_supports_tag_keyword(tmp_path: Path):
     results2 = service.search_videos("办公室")
     assert results2, "按第二个标签搜索也应返回结果"
     assert any("办公室" in (r.get("tags") or "") for r in results2)
+
+
+def test_update_video_actress_updates_search_result(tmp_path: Path):
+    service = _create_service_with_tmp_db(tmp_path)
+    storage = service.storage
+    conn = storage.connection
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        INSERT INTO video_info (file_path, filename, file_size, duration_formatted, resolution, created_time, video_code)
+        VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
+        """,
+        ("/tmp/actress-test.mp4", "ACT-001.mp4", 100 * 1024 * 1024, "00:10:00", "1920x1080", "ACT-001"),
+    )
+    conn.commit()
+
+    ok = service.update_video_actress("ACT-001", ["Alice", "Bob"])
+    assert ok
+
+    results = service.search_videos("ACT-001")
+    assert results
+    actress = results[0].get("actress") or ""
+    assert "Alice" in actress and "Bob" in actress

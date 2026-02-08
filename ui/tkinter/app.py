@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 try:
-    from ui.services import search_videos, search_videos_paged, start_maintain, random_videos, latest_videos, latest_videos_paged, broken_videos, set_video_preference, update_video_tags
+    from ui.services import search_videos, search_videos_paged, start_maintain, random_videos, latest_videos, latest_videos_paged, broken_videos, set_video_preference, update_video_tags, update_video_actress
 except Exception as e:
     print(f"导入服务失败: {e}")
     # 提供降级占位，避免启动失败
@@ -38,6 +38,8 @@ except Exception as e:
     def set_video_preference(video_code: str, status: str | None):
         return None
     def update_video_tags(video_id: int, tags: list[str]):
+        return False
+    def update_video_actress(video_code: str, actress_names: list[str]):
         return False
 
 try:
@@ -2204,7 +2206,14 @@ class XJJDesktopApp:
         menu = tk.Menu(self.root, tearoff=0)
         setattr(table, "_context_menu", menu)
         video_label = row.get("video") or row.get("filename") or ""
+        video_code = row.get("video_code") or ""
         video_id = row.get("id")
+        
+        if video_code:
+            actress_label = row.get("actress") or ""
+            menu.add_command(label="编辑女艺人...", command=lambda: self._open_actress_manager(table, item, video_code, actress_label))
+        else:
+            menu.add_command(label="编辑女艺人...", state=tk.DISABLED)
         
         if video_id:
             tags_label = row.get("tags") or ""
@@ -2401,6 +2410,73 @@ class XJJDesktopApp:
         elif status == "dislike": table.item(item_id, tags=("pref_dislike",))
         elif status == "deleted": table.item(item_id, tags=("pref_deleted",))
         else: table.item(item_id, tags=())
+
+    def _open_actress_manager(self, table: ttk.Treeview, item_id: str, video_code: str, current_actress_str: str) -> None:
+        if not video_code:
+            messagebox.showerror("无法编辑", "缺少视频号，无法更新女艺人。")
+            return
+        dialog = tk.Toplevel(self.root)
+        dialog.withdraw()
+        dialog.title("编辑女艺人")
+        dialog.geometry("360x160")
+        
+        dialog.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (dialog.winfo_width() // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+        dialog.deiconify()
+        
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.focus_set()
+        
+        container = tk.Frame(dialog, bg=self.colors["bg"], padx=15, pady=15)
+        container.pack(fill=tk.BOTH, expand=True)
+        
+        tk.Label(container, text="女艺人（用逗号分隔）:", bg=self.colors["bg"]).pack(anchor="w")
+        actress_var = tk.StringVar(value=current_actress_str or "")
+        entry = tk.Entry(container, textvariable=actress_var, font=("Helvetica", 13))
+        entry.pack(fill=tk.X, pady=8)
+        entry.focus_set()
+        
+        btn_frame = tk.Frame(container, bg=self.colors["bg"])
+        btn_frame.pack(fill=tk.X, pady=(6, 0))
+        
+        def _on_save():
+            raw = actress_var.get().strip()
+            names = [n.strip() for n in re.split(r"[，,;；/、]", raw) if n and n.strip()]
+            ok = self._set_row_actress(table, item_id, video_code, names)
+            if ok:
+                dialog.destroy()
+            else:
+                messagebox.showerror("保存失败", "女艺人更新失败，请稍后重试。")
+        
+        btn_save = self._make_action_button(btn_frame, text="保存", padx=10, command=_on_save)
+        btn_save.pack(side=tk.RIGHT, padx=5)
+        
+        btn_cancel = self._make_action_button(btn_frame, text="取消", padx=10, command=dialog.destroy)
+        btn_cancel.pack(side=tk.RIGHT, padx=5)
+
+    def _set_row_actress(self, table: ttk.Treeview, item_id: str, video_code: str, actress_names: list[str]) -> bool:
+        try:
+            if not update_video_actress(video_code, actress_names):
+                return False
+        except Exception:
+            return False
+        
+        new_actress_str = ", ".join(actress_names)
+        row = getattr(table, "_row_cache", {}).get(item_id)
+        if row:
+            row["actress"] = new_actress_str
+            row["video_code"] = video_code
+        
+        values = list(table.item(item_id, "values") or [])
+        cols = list(table["columns"])
+        if "actress" in cols:
+            idx = cols.index("actress")
+            values[idx] = new_actress_str
+            table.item(item_id, values=values)
+        return True
 
     def _show_video_list_window(self, title: str, rows: list[dict]) -> None:
         win = tk.Toplevel(self.root)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import List, Dict, Optional, Any
+from datetime import datetime
 import os
 import sys
 from pathlib import Path
@@ -222,7 +223,8 @@ class VideoService:
                 file_size_formatted = "未知"
 
             # 统一 UI 字段：首列展示视频码，缺失时回退文件名
-            video_label = get_val('video_code') if get_val('video_code') else get_val('filename')
+            video_code = get_val('video_code') or ""
+            video_label = video_code if video_code else get_val('filename')
 
             # 聚合标签信息（video_tags 多对多关系）
             tags_label = ""
@@ -250,10 +252,10 @@ class VideoService:
             # Fetch actress info
             actress_label = ""
             try:
-                if video_label and has_movie_actress_works:
+                if video_code and has_movie_actress_works:
                     # Try direct query since self.storage.connection is available.
                     cur = self.storage.connection.cursor()
-                    cur.execute("SELECT actress_name FROM movie_actress_works WHERE video_code = ?", (video_label,))
+                    cur.execute("SELECT actress_name FROM movie_actress_works WHERE video_code = ?", (video_code,))
                     act_rows = cur.fetchall()
                     if act_rows:
                          names = sorted(list(set(r[0] for r in act_rows if r[0])))
@@ -264,6 +266,7 @@ class VideoService:
             results.append({
                 'id': video_id,
                 'video': video_label,
+                'video_code': video_code,
                 'actress': actress_label,
                 'tags': tags_label,
                 'file_path': get_val('file_path'),
@@ -736,6 +739,101 @@ class VideoService:
             )
             return False
 
+    def update_video_actress(self, video_code: str, actress_names: List[str]) -> bool:
+        try:
+            self._ensure_storage()
+            code_key = (video_code or "").strip().upper()
+            if not code_key:
+                return False
+            cursor = self.storage.connection.cursor()
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='movie_actress_works'"
+            )
+            if cursor.fetchone() is None:
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS movie_actress_works (
+                        actress_name TEXT NOT NULL,
+                        video_code TEXT NOT NULL,
+                        release_date TEXT,
+                        title TEXT,
+                        link TEXT,
+                        source TEXT,
+                        fetched_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        other_name1 TEXT,
+                        other_name2 TEXT,
+                        other_name3 TEXT,
+                        PRIMARY KEY (actress_name, video_code)
+                    )
+                    """
+                )
+            cursor.execute("PRAGMA table_info(movie_actress_works)")
+            columns = [row[1] for row in cursor.fetchall()]
+            select_cols = [c for c in ["release_date", "title", "link", "source", "fetched_at", "other_name1", "other_name2", "other_name3"] if c in columns]
+            existing = {}
+            if select_cols:
+                cursor.execute(
+                    f"SELECT {', '.join(select_cols)} FROM movie_actress_works WHERE video_code = ? LIMIT 1",
+                    (code_key,),
+                )
+                row = cursor.fetchone()
+                if row is not None:
+                    for col in select_cols:
+                        existing[col] = row[col]
+
+            cursor.execute("DELETE FROM movie_actress_works WHERE video_code = ?", (code_key,))
+
+            clean_names = [n.strip() for n in actress_names if n and n.strip()]
+            if not clean_names:
+                self.storage.connection.commit()
+                return True
+
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            base_cols = ["actress_name", "video_code"]
+            extra_cols = []
+            extra_values = []
+            if "release_date" in columns:
+                extra_cols.append("release_date")
+                extra_values.append(existing.get("release_date"))
+            if "title" in columns:
+                extra_cols.append("title")
+                extra_values.append(existing.get("title"))
+            if "link" in columns:
+                extra_cols.append("link")
+                extra_values.append(existing.get("link"))
+            if "source" in columns:
+                extra_cols.append("source")
+                extra_values.append(existing.get("source") or "manual")
+            if "fetched_at" in columns:
+                extra_cols.append("fetched_at")
+                extra_values.append(existing.get("fetched_at") or now)
+            if "updated_at" in columns:
+                extra_cols.append("updated_at")
+                extra_values.append(now)
+            if "other_name1" in columns:
+                extra_cols.append("other_name1")
+                extra_values.append(existing.get("other_name1"))
+            if "other_name2" in columns:
+                extra_cols.append("other_name2")
+                extra_values.append(existing.get("other_name2"))
+            if "other_name3" in columns:
+                extra_cols.append("other_name3")
+                extra_values.append(existing.get("other_name3"))
+
+            all_cols = base_cols + extra_cols
+            placeholders = ", ".join(["?"] * len(all_cols))
+            insert_sql = f"INSERT INTO movie_actress_works ({', '.join(all_cols)}) VALUES ({placeholders})"
+            rows = [(name, code_key, *extra_values) for name in clean_names]
+            cursor.executemany(insert_sql, rows)
+            self.storage.connection.commit()
+            return True
+        except Exception as e:
+            self.error_handler.handle_database_error(
+                f"更新女艺人失败: {e}", self.db_path, "update_video_actress"
+            )
+            return False
+
 
 # 创建全局服务实例
 video_service = VideoService()
@@ -781,3 +879,6 @@ def set_video_preference(video_code: str, status: Optional[str]) -> None:
 def update_video_tags(video_id: int, tags: List[str]) -> bool:
     """更新视频标签 - 兼容性包装函数"""
     return video_service.update_video_tags(video_id, tags)
+
+def update_video_actress(video_code: str, actress_names: List[str]) -> bool:
+    return video_service.update_video_actress(video_code, actress_names)

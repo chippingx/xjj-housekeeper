@@ -63,12 +63,12 @@ def test_right_click_menu_has_preference_actions_and_updates_row(monkeypatch):
         menu = getattr(table, "_context_menu", None)
         assert isinstance(menu, tk.Menu), "右键菜单未挂载到表格 _context_menu"
 
-        # 菜单前几项应为偏好相关动作
-        labels = [menu.entrycget(i, "label") for i in range(4)]
-        assert labels == ["标记为喜欢", "标记为不喜欢", "标记为已删除", "清除偏好"]
+        # 菜单前几项应为编辑与偏好相关动作
+        labels = [menu.entrycget(i, "label") for i in range(5)]
+        assert labels == ["编辑女艺人...", "标记为喜欢", "标记为不喜欢", "标记为已删除", "清除偏好"]
 
         # 触发“标记为喜欢”
-        menu.invoke(0)
+        menu.invoke(1)
 
         assert calls and calls[0] == ("TST-001", "like")
 
@@ -81,11 +81,64 @@ def test_right_click_menu_has_preference_actions_and_updates_row(monkeypatch):
         assert "pref_like" in table.item(first_item, "tags")
 
         # 触发“标记为已删除”
-        menu.invoke(2)
+        menu.invoke(3)
         assert calls[1] == ("TST-001", "deleted")
         values = table.item(first_item, "values")
         assert values[pref_idx] == "已删除"
         assert "pref_deleted" in table.item(first_item, "tags")
+    finally:
+        if app is not None:
+            try:
+                app.root.destroy()
+            except Exception:
+                pass
+
+
+def test_set_row_actress_updates_table(monkeypatch):
+    try:
+        from ui.tkinter.app import XJJDesktopApp
+    except Exception as exc:  # pragma: no cover
+        pytest.skip(f"Tkinter 应用初始化失败，跳过测试：{exc}")
+
+    app = None
+    try:
+        app = XJJDesktopApp()
+        app.show_page("query")
+        table = _find_treeview(app.pages["query"])
+        assert table is not None, "未找到结果表格"
+
+        rows = [
+            {
+                "video": "ACT-001",
+                "video_code": "ACT-001",
+                "actress": "Alice",
+                "file_path": "/tmp/actress001.mp4",
+                "file_size": "100M",
+                "duration": "00:10:00",
+                "resolution": "1920x1080",
+            }
+        ]
+        app._render_table(table, rows)
+        item_ids = table.get_children()
+        first_item = item_ids[0]
+
+        calls: list[tuple[str, list[str]]] = []
+
+        def fake_update_video_actress(code: str, names: list[str]):  # noqa: ANN001
+            calls.append((code, names))
+            return True
+
+        monkeypatch.setattr("ui.tkinter.app.update_video_actress", fake_update_video_actress)
+
+        ok = app._set_row_actress(table, first_item, "ACT-001", ["Alice", "Bob"])
+        assert ok
+        assert calls and calls[0] == ("ACT-001", ["Alice", "Bob"])
+
+        columns = list(table["columns"])
+        assert "actress" in columns
+        idx = columns.index("actress")
+        values = table.item(first_item, "values")
+        assert values[idx] == "Alice, Bob"
     finally:
         if app is not None:
             try:
