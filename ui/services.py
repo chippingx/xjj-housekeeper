@@ -110,6 +110,10 @@ class VideoService:
                     "SELECT name FROM sqlite_master WHERE type='table' AND name='video_tags'"
                 )
                 has_video_tags = cursor.fetchone() is not None
+                cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='movie_actress_works'"
+                )
+                has_movie_actress_works = cursor.fetchone() is not None
                 
                 like_keyword = f"%{search_term}%"
                 
@@ -123,9 +127,9 @@ class VideoService:
                         kw_parts.append("id IN (SELECT video_id FROM video_tags WHERE tag LIKE ?)")
                         params.append(like_keyword)
                         
-                    # 尝试关联女艺人表
-                    kw_parts.append("video_code IN (SELECT video_code FROM movie_actress_works WHERE actress_name LIKE ?)")
-                    params.append(like_keyword)
+                    if has_movie_actress_works:
+                        kw_parts.append("video_code IN (SELECT video_code FROM movie_actress_works WHERE actress_name LIKE ?)")
+                        params.append(like_keyword)
                 else:
                     kw_parts.append("filename LIKE ?")
                     params.append(like_keyword)
@@ -183,6 +187,15 @@ class VideoService:
     def _rows_to_results(self, rows) -> List[Dict[str, str]]:
         """将数据库行转换为统一的 UI 结果结构。"""
         results: List[Dict[str, str]] = []
+        has_movie_actress_works = False
+        try:
+            cur = self.storage.connection.cursor()
+            cur.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='movie_actress_works'"
+            )
+            has_movie_actress_works = cur.fetchone() is not None
+        except Exception:
+            has_movie_actress_works = False
         for row in rows:
             # 兼容 sqlite3.Row 和 dict
             if isinstance(row, dict):
@@ -237,7 +250,7 @@ class VideoService:
             # Fetch actress info
             actress_label = ""
             try:
-                if video_label:
+                if video_label and has_movie_actress_works:
                     # Try direct query since self.storage.connection is available.
                     cur = self.storage.connection.cursor()
                     cur.execute("SELECT actress_name FROM movie_actress_works WHERE video_code = ?", (video_label,))

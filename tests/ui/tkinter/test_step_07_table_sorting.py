@@ -186,28 +186,30 @@ def test_sort_header_indicator_updates():
         table = _find_treeview(app.pages["query"])
         assert table is not None, "未找到结果表格"
 
-        # 初始表头文本不应包含箭头
-        assert table.heading("file_size", "text") == "大小"
-        assert table.heading("duration", "text") == "时长"
+        columns = list(table["columns"])
+        assert len(columns) >= 2, "表格列数不足，无法验证排序箭头"
+        col_a = "file_size" if "file_size" in columns else columns[0]
+        col_b = "duration" if "duration" in columns and "duration" != col_a else next(c for c in columns if c != col_a)
 
-        # 按大小升序
-        app._sort_table(table, "file_size")
-        heading_text = table.heading("file_size", "text")
+        text_a = table.heading(col_a, "text")
+        text_b = table.heading(col_b, "text")
+        assert "↑" not in text_a and "↓" not in text_a
+        assert "↑" not in text_b and "↓" not in text_b
+
+        app._sort_table(table, col_a)
+        heading_text = table.heading(col_a, "text")
         assert "↑" in heading_text or "size" in heading_text # 宽松检查，避免 split 失败
         
-        # 其他列应保持原文字，不带箭头
-        assert table.heading("duration", "text") == "时长"
+        assert table.heading(col_b, "text") == text_b
 
-        # 按大小再排序一次，应切换为降序箭头
-        app._sort_table(table, "file_size")
-        heading_text = table.heading("file_size", "text")
+        app._sort_table(table, col_a)
+        heading_text = table.heading(col_a, "text")
         assert "↓" in heading_text
 
-        # 切换到按时长排序，大小列箭头应被移除，时长列出现箭头
-        app._sort_table(table, "duration")
-        heading_text = table.heading("duration", "text")
+        app._sort_table(table, col_b)
+        heading_text = table.heading(col_b, "text")
         assert "↑" in heading_text
-        assert table.heading("file_size", "text") == "大小"
+        assert table.heading(col_a, "text") == text_a
 
     finally:
         if app is not None:

@@ -135,6 +135,39 @@ class XJJDesktopApp:
         self._last_scan_dir: str | None = None
         self._log_max_lines = 2000
         self._ignore_query_trace = False
+        self._settings_scroll_dirty = False
+        self._settings_scroll_job = None
+        self._settings_scrollregion_cache = None
+        self._maintain_notebook = None
+        self._maintain_settings_tab_id = None
+        self._maintain_tab_loading_overlays = {}
+        self._maintain_tab_loading_jobs = {}
+        self._debug_tab_perf = os.environ.get("XJJ_DEBUG_TAB_PERF") == "1"
+        self._debug_tab_switch = os.environ.get("XJJ_DEBUG_TAB_SWITCH") == "1"
+        self._perf_enabled = os.environ.get("XJJ_PERF_TRACE") == "1"
+        self._perf_auto_click = os.environ.get("XJJ_PERF_CLICK") == "1"
+        self._perf_autorun = os.environ.get("XJJ_PERF_AUTORUN") == "1"
+        self._perf_auto_quit = os.environ.get("XJJ_PERF_AUTO_QUIT") == "1"
+        self._perf_switch_rounds = int(os.environ.get("XJJ_PERF_SWITCH_ROUNDS", "3"))
+        self._perf_switch_delay_ms = int(os.environ.get("XJJ_PERF_SWITCH_DELAY_MS", "900"))
+        self._perf_auto_quit_ms = int(os.environ.get("XJJ_PERF_AUTO_QUIT_MS", "0"))
+        self._perf_records = {}
+        self._perf_sequence = []
+        self._trace_tab_render = os.environ.get("XJJ_TRACE_TAB_RENDER") == "1"
+        self._trace_tab_map = os.environ.get("XJJ_TRACE_TAB_MAP") == "1"
+        self._trace_records = {}
+        self._tab_switch_started = None
+        self._tab_switch_text = None
+        self._tab_render_token = 0
+        self._tab_render_complete = True
+        self._auto_switch_active = False
+        self._auto_switch_waiting = False
+        self._tab_render_state = {}
+        self._tab_expose_token = 0
+        self._tab_expose_logged = False
+        self._maintain_tab_probes = {}
+        self._tab_render_watchdog_job = None
+        self._tab_render_stall_ms = int(os.environ.get("XJJ_TRACE_RENDER_STALL_MS", "2000"))
 
         self._init_styles()
         self._build_layout()
@@ -147,6 +180,16 @@ class XJJDesktopApp:
         self.current_page = "query"
         self._update_sidebar_selection()
         self.show_page("query")
+        if self._perf_auto_click and self._perf_autorun:
+            self.show_page("maintain")
+            self.root.after(
+                800,
+                lambda: self._simulate_tab_clicks(
+                    self._maintain_notebook,
+                    rounds=self._perf_switch_rounds,
+                    delay_ms=self._perf_switch_delay_ms,
+                ),
+            )
 
     def _init_styles(self) -> None:
         style = ttk.Style()
@@ -722,26 +765,458 @@ class XJJDesktopApp:
         notebook.add(tab_frames["movie_info"], text="影视资讯")
         notebook.add(tab_frames["settings"], text="设置")
 
-        self._init_maintain_import(tab_frames["import"])
-        self._init_maintain_manage(tab_frames["manage"])
-        self._init_maintain_movie_info(tab_frames["movie_info"])
-        self._init_maintain_settings(tab_frames["settings"])
+        self._maintain_notebook = notebook
+        self._maintain_settings_tab_id = str(tab_frames["settings"])
+        self._maintain_tab_frames = {
+            "新视频": tab_frames["import"],
+            "问题视频": tab_frames["manage"],
+            "影视资讯": tab_frames["movie_info"],
+            "设置": tab_frames["settings"],
+        }
+        self._maintain_tab_probes = {}
+        for tab_text, frame in self._maintain_tab_frames.items():
+            probe = tk.Frame(frame, bg=self.colors["bg"], width=2, height=2)
+            probe.place(x=1, y=1, width=2, height=2)
+            self._maintain_tab_probes[tab_text] = probe
+        self._maintain_tab_loading_overlays = {}
+        for tab_text, frame in self._maintain_tab_frames.items():
+            overlay = tk.Frame(frame, bg=self.colors["bg"])
+            label = tk.Label(overlay, text="加载中...", bg=self.colors["bg"], fg=self.colors["gray700"], font=("Helvetica", 14))
+            label.place(relx=0.5, rely=0.5, anchor="center")
+            overlay.place_forget()
+            self._maintain_tab_loading_overlays[tab_text] = overlay
+        self._maintain_tab_loading_jobs = {}
+
+        def time_init(tab_name: str, fn, frame):
+            start_time = time.perf_counter()
+            fn(frame)
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            self._trace_record("tab_init", elapsed_ms, f"tab={tab_name}")
+
+        time_init("新视频", self._init_maintain_import, tab_frames["import"])
+        time_init("问题视频", self._init_maintain_manage, tab_frames["manage"])
+        time_init("影视资讯", self._init_maintain_movie_info, tab_frames["movie_info"])
+        time_init("设置", self._init_maintain_settings, tab_frames["settings"])
 
         def on_tab_changed(_event):
+            start_time = time.perf_counter()
             selected = notebook.select()
             if not selected:
                 return
             tab_text = notebook.tab(selected, "text")
+            self._tab_switch_started = start_time
+            self._tab_switch_text = tab_text
+            self._tab_render_token += 1
+            current_token = self._tab_render_token
+            self._tab_render_complete = False
+            self._tab_render_state[current_token] = {"stable": 0, "last": (0, 0), "visible_logged": False}
+            self._tab_expose_token = current_token
+            self._tab_expose_logged = False
+            if self._tab_render_watchdog_job is not None:
+                self._safe_after_cancel(self._tab_render_watchdog_job)
+                self._tab_render_watchdog_job = None
+            if self._debug_tab_perf:
+                print(f"[perf] {datetime.now().isoformat(timespec='milliseconds')} on_tab_changed enter tab={tab_text}")
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            if self._debug_tab_perf:
+                print(f"[perf] {datetime.now().isoformat(timespec='milliseconds')} on_tab_changed exit tab={tab_text} elapsed_ms={elapsed_ms:.2f}")
+            self._perf_record("on_tab_changed", elapsed_ms, f"tab={tab_text}")
+            self._trace_record("tab_changed_handler", elapsed_ms, f"tab={tab_text}")
+            self.root.after_idle(lambda t=tab_text: self._force_tab_redraw(t))
+            self._show_tab_loading(tab_text)
+            self._schedule_tab_loading_hide(tab_text)
             if tab_text == "设置":
-                if hasattr(self, "_settings_update_scroll"):
-                    self.root.after_idle(self._settings_update_scroll)
-            else:
-                if hasattr(self, "_settings_canvas"):
-                    self._settings_canvas.configure(scrollregion=(0, 0, 0, 0))
+                update = getattr(self, "_settings_update_scroll", None)
+                if update is not None:
+                    self._settings_scroll_dirty = True
+                    if self._settings_scroll_job is not None:
+                        self._safe_after_cancel(self._settings_scroll_job)
+                        self._settings_scroll_job = None
+                    self._settings_scroll_job = self.root.after_idle(update)
+            if self._trace_tab_render:
+                self.root.after_idle(lambda t=tab_text, s=start_time: self._trace_record_since("tab_idle", s, f"tab={t}"))
+                self.root.after_idle(lambda t=tab_text, s=start_time, token=current_token: self._start_tab_render_watch(t, s, token))
+                self.root.after_idle(lambda t=tab_text: self._force_tab_redraw(t))
+                if self._tab_render_stall_ms > 0:
+                    self._tab_render_watchdog_job = self.root.after(
+                        self._tab_render_stall_ms,
+                        lambda t=tab_text, s=start_time, token=current_token: self._tab_render_watchdog(t, s, token),
+                    )
 
         notebook.bind("<<NotebookTabChanged>>", on_tab_changed)
+        if self._trace_tab_map:
+            frame_map = {
+                tab_frames["import"]: "新视频",
+                tab_frames["manage"]: "问题视频",
+                tab_frames["movie_info"]: "影视资讯",
+                tab_frames["settings"]: "设置",
+            }
+            expose_widgets = dict(frame_map)
+            settings_canvas = getattr(self, "_settings_canvas", None)
+            if settings_canvas is not None:
+                expose_widgets[settings_canvas] = "设置"
+            for tab_text, probe in self._maintain_tab_probes.items():
+                expose_widgets[probe] = tab_text
+
+            def on_map(event):
+                tab_text = frame_map.get(event.widget)
+                started = self._tab_switch_started
+                if tab_text and started:
+                    self._trace_record_since("tab_map", started, f"tab={tab_text}")
+
+            def on_expose(event):
+                if not self._trace_tab_render:
+                    return
+                if self._tab_expose_logged:
+                    return
+                started = self._tab_switch_started
+                tab_text = expose_widgets.get(event.widget)
+                if not started or not tab_text:
+                    return
+                if self._tab_expose_token != self._tab_render_token:
+                    return
+                self._tab_expose_logged = True
+                self._trace_record_since("tab_expose", started, f"tab={tab_text}")
+
+            for frame in frame_map:
+                frame.bind("<Map>", on_map)
+            for widget in expose_widgets:
+                widget.bind("<Expose>", on_expose)
+                widget.bind("<Visibility>", on_expose)
+                widget.bind("<Motion>", lambda e: self._trace_tab_motion())
+
+        if self._debug_tab_switch:
+            self.root.after(1000, lambda: self._simulate_tab_switches(notebook))
 
         return container
+
+    def _simulate_tab_switches(self, notebook: ttk.Notebook, rounds: int = 4, delay_ms: int = 600) -> None:
+        tabs = list(notebook.tabs())
+        if not tabs:
+            return
+        total = rounds * len(tabs)
+        index = 0
+
+        def step():
+            nonlocal total, index
+            if total <= 0:
+                return
+            tab_id = tabs[index % len(tabs)]
+            start_time = time.perf_counter()
+            notebook.select(tab_id)
+            def on_idle():
+                elapsed_ms = (time.perf_counter() - start_time) * 1000
+                if self._debug_tab_perf:
+                    text = notebook.tab(tab_id, "text")
+                    print(f"[perf] {datetime.now().isoformat(timespec='milliseconds')} switch_complete tab={text} elapsed_ms={elapsed_ms:.2f}")
+            self.root.after_idle(on_idle)
+            index += 1
+            total -= 1
+            self.root.after(delay_ms, step)
+
+        step()
+
+    def _simulate_tab_clicks(self, notebook: ttk.Notebook | None, rounds: int = 3, delay_ms: int = 900) -> None:
+        if notebook is None:
+            return
+        tabs = list(notebook.tabs())
+        if not tabs:
+            return
+        total = rounds * len(tabs)
+        index = 0
+
+        def finish():
+            self._dump_perf_summary()
+            self._dump_trace_summary()
+            if self._perf_auto_quit and self._perf_auto_quit_ms > 0:
+                self.root.after(self._perf_auto_quit_ms, self.root.quit)
+
+        def step():
+            nonlocal total, index
+            if total <= 0:
+                finish()
+                return
+            if self._auto_switch_waiting:
+                self.root.after(50, step)
+                return
+            tab_id = tabs[index % len(tabs)]
+            tab_text = notebook.tab(tab_id, "text")
+            start_time = time.perf_counter()
+            notebook.select(tab_id)
+
+            def on_idle():
+                self._perf_record_since("tab_switch_complete", start_time, f"tab={tab_text}")
+                self._trace_record_since("tab_click_complete", start_time, f"tab={tab_text}")
+
+            self.root.after_idle(on_idle)
+            index += 1
+            total -= 1
+            self._auto_switch_waiting = True
+            self._wait_tab_render_then_next(delay_ms, step)
+
+        self._auto_switch_active = True
+        step()
+
+    def _perf_record(self, name: str, elapsed_ms: float, extra: str | None = None) -> None:
+        if not self._perf_enabled:
+            return
+        self._perf_records.setdefault(name, []).append(elapsed_ms)
+        if extra:
+            self._perf_sequence.append((name, elapsed_ms, extra))
+            print(f"[perf] {datetime.now().isoformat(timespec='milliseconds')} {name} elapsed_ms={elapsed_ms:.2f} {extra}")
+        else:
+            self._perf_sequence.append((name, elapsed_ms, ""))
+            print(f"[perf] {datetime.now().isoformat(timespec='milliseconds')} {name} elapsed_ms={elapsed_ms:.2f}")
+
+    def _perf_record_since(self, name: str, start_time: float, extra: str | None = None) -> None:
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        self._perf_record(name, elapsed_ms, extra)
+
+    def _dump_perf_summary(self) -> None:
+        if not self._perf_enabled or not self._perf_records:
+            return
+        print("[perf] summary_begin")
+        for name, items in sorted(self._perf_records.items()):
+            if not items:
+                continue
+            count = len(items)
+            avg = sum(items) / count
+            max_ms = max(items)
+            min_ms = min(items)
+            print(f"[perf] summary {name} count={count} avg_ms={avg:.2f} max_ms={max_ms:.2f} min_ms={min_ms:.2f}")
+        print("[perf] summary_end")
+
+    def _trace_record(self, name: str, elapsed_ms: float, extra: str | None = None) -> None:
+        if not self._trace_tab_render:
+            return
+        self._trace_records.setdefault(name, []).append(elapsed_ms)
+        if extra:
+            print(f"[trace] {datetime.now().isoformat(timespec='milliseconds')} {name} elapsed_ms={elapsed_ms:.2f} {extra}", flush=True)
+        else:
+            print(f"[trace] {datetime.now().isoformat(timespec='milliseconds')} {name} elapsed_ms={elapsed_ms:.2f}", flush=True)
+
+    def _trace_record_since(self, name: str, start_time: float, extra: str | None = None) -> None:
+        if not self._trace_tab_render:
+            return
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        self._trace_record(name, elapsed_ms, extra)
+
+    def _trace_tab_layout(self, tab_text: str, start_time: float, token: int) -> None:
+        if not self._trace_tab_render:
+            return
+        if token != self._tab_render_token:
+            return
+        start_time = time.perf_counter()
+        self.root.update_idletasks()
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        self._trace_record("update_idletasks", elapsed_ms, f"tab={tab_text}")
+        if tab_text == "设置":
+            canvas = getattr(self, "_settings_canvas", None)
+            if canvas is not None:
+                start_bbox = time.perf_counter()
+                bbox = canvas.bbox("all")
+                elapsed_bbox = (time.perf_counter() - start_bbox) * 1000
+                self._trace_record("settings_bbox", elapsed_bbox, f"tab={tab_text} bbox={bbox}")
+        if token == self._tab_render_token:
+            self._tab_render_complete = True
+            self._auto_switch_waiting = False
+            if self._auto_switch_active:
+                self._trace_record_since("tab_render_complete", start_time, f"tab={tab_text}")
+
+    def _dump_trace_summary(self) -> None:
+        if not self._trace_tab_render or not self._trace_records:
+            return
+        print("[trace] summary_begin")
+        for name, items in sorted(self._trace_records.items()):
+            if not items:
+                continue
+            count = len(items)
+            avg = sum(items) / count
+            max_ms = max(items)
+            min_ms = min(items)
+            print(f"[trace] summary {name} count={count} avg_ms={avg:.2f} max_ms={max_ms:.2f} min_ms={min_ms:.2f}")
+        print("[trace] summary_end")
+
+    def _wait_tab_render_then_next(self, delay_ms: int, callback) -> None:
+        if self._tab_render_complete:
+            self.root.after(delay_ms, callback)
+            return
+        self.root.after(50, lambda: self._wait_tab_render_then_next(delay_ms, callback))
+
+    def _start_tab_render_watch(self, tab_text: str, start_time: float, token: int) -> None:
+        if not self._trace_tab_render:
+            return
+        if token != self._tab_render_token:
+            return
+        state = self._tab_render_state.get(token, {"stable": 0, "last": (0, 0), "visible_logged": False})
+        frame = self._get_tab_frame(tab_text)
+        probe = self._get_tab_probe_widget(tab_text, frame)
+        if probe is None:
+            self._tab_render_complete = True
+            self._auto_switch_waiting = False
+            self._trace_record_since("tab_render_ready", start_time, f"tab={tab_text} probe=none")
+            return
+        mapped = bool(probe.winfo_ismapped())
+        size = (probe.winfo_width(), probe.winfo_height())
+        viewable = False
+        if mapped and size[0] > 1 and size[1] > 1:
+            try:
+                cx = probe.winfo_rootx() + max(1, size[0] // 2)
+                cy = probe.winfo_rooty() + max(1, size[1] // 2)
+                widget = self.root.winfo_containing(cx, cy)
+                viewable = widget is not None and self._is_widget_descendant(frame, widget)
+            except Exception:
+                viewable = False
+        if viewable and not state.get("visible_logged"):
+            state["visible_logged"] = True
+            self._trace_record_since("tab_render_visible", start_time, f"tab={tab_text} size={size}")
+        if mapped and size[0] > 1 and size[1] > 1:
+            if size == state["last"]:
+                state["stable"] += 1
+            else:
+                state["stable"] = 0
+                state["last"] = size
+        else:
+            state["stable"] = 0
+            state["last"] = size
+        self._tab_render_state[token] = state
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        if state["stable"] >= 2 and viewable:
+            self._tab_render_complete = True
+            self._auto_switch_waiting = False
+            self._trace_record("tab_render_ready", elapsed_ms, f"tab={tab_text} size={size}")
+            if tab_text == "设置":
+                canvas = getattr(self, "_settings_canvas", None)
+                if canvas is not None:
+                    bbox = canvas.bbox("all")
+                    self._trace_record("settings_bbox", 0.0, f"tab={tab_text} bbox={bbox}")
+                update = getattr(self, "_settings_update_scroll", None)
+                if update is not None and getattr(self, "_settings_scroll_dirty", False):
+                    update()
+            self._hide_tab_loading(tab_text)
+            return
+        if elapsed_ms > 15000:
+            self._tab_render_complete = True
+            self._auto_switch_waiting = False
+            self._trace_record("tab_render_timeout", elapsed_ms, f"tab={tab_text} size={size} mapped={mapped}")
+            self._hide_tab_loading(tab_text)
+            return
+        self.root.after(50, lambda t=tab_text, s=start_time, tok=token: self._start_tab_render_watch(t, s, tok))
+
+    def _get_tab_frame(self, tab_text: str):
+        frames = getattr(self, "_maintain_tab_frames", None)
+        if not frames:
+            return None
+        return frames.get(tab_text)
+
+    def _get_tab_probe_widget(self, tab_text: str, frame):
+        probes = getattr(self, "_maintain_tab_probes", None)
+        if probes and tab_text in probes:
+            return probes[tab_text]
+        return frame
+
+    def _is_widget_descendant(self, parent, widget) -> bool:
+        if parent is None or widget is None:
+            return False
+        try:
+            current = widget
+            while current is not None:
+                if str(current) == str(parent):
+                    return True
+                parent_name = current.winfo_parent()
+                if not parent_name:
+                    return False
+                current = current.nametowidget(parent_name)
+        except Exception:
+            return False
+        return False
+
+    def _safe_after_cancel(self, job_id) -> None:
+        try:
+            self.root.after_cancel(job_id)
+        except Exception:
+            return
+
+    def _show_tab_loading(self, tab_text: str) -> None:
+        overlays = getattr(self, "_maintain_tab_loading_overlays", None)
+        if not overlays:
+            return
+        overlay = overlays.get(tab_text)
+        if overlay is None:
+            return
+        overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+        overlay.lift()
+
+    def _schedule_tab_loading_hide(self, tab_text: str) -> None:
+        jobs = getattr(self, "_maintain_tab_loading_jobs", None)
+        if jobs is None:
+            return
+        existing = jobs.get(tab_text)
+        if existing is not None:
+            self._safe_after_cancel(existing)
+        def finalize():
+            frame = self._get_tab_frame(tab_text)
+            if frame is not None:
+                try:
+                    frame.update_idletasks()
+                except Exception:
+                    pass
+            self._hide_tab_loading(tab_text)
+            jobs.pop(tab_text, None)
+        jobs[tab_text] = self.root.after(200, finalize)
+
+    def _hide_tab_loading(self, tab_text: str) -> None:
+        overlays = getattr(self, "_maintain_tab_loading_overlays", None)
+        if not overlays:
+            return
+        overlay = overlays.get(tab_text)
+        if overlay is None:
+            return
+        overlay.place_forget()
+
+    def _force_tab_redraw(self, tab_text: str) -> None:
+        frame = self._get_tab_frame(tab_text)
+        if frame is None:
+            return
+        start_time = time.perf_counter()
+        try:
+            frame.update_idletasks()
+        except Exception:
+            return
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        if self._trace_tab_render:
+            self._trace_record("tab_force_redraw", elapsed_ms, f"tab={tab_text}")
+
+    def _tab_render_watchdog(self, tab_text: str, start_time: float, token: int) -> None:
+        if token != self._tab_render_token:
+            return
+        if self._tab_render_complete:
+            return
+        state = self._tab_render_state.get(token, {"stable": 0, "last": (0, 0), "visible_logged": False})
+        probe = self._get_tab_probe_widget(tab_text, self._get_tab_frame(tab_text))
+        mapped = bool(probe.winfo_ismapped()) if probe is not None else False
+        size = (probe.winfo_width(), probe.winfo_height()) if probe is not None else (0, 0)
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        if not state.get("visible_logged"):
+            self._trace_record("tab_render_stall", elapsed_ms, f"tab={tab_text} size={size} mapped={mapped}")
+            self._force_tab_redraw(tab_text)
+        if elapsed_ms <= 15000 and not self._tab_render_complete:
+            self._tab_render_watchdog_job = self.root.after(
+                self._tab_render_stall_ms,
+                lambda t=tab_text, s=start_time, tok=token: self._tab_render_watchdog(t, s, tok),
+            )
+
+    def _trace_tab_motion(self) -> None:
+        if not self._trace_tab_render:
+            return
+        if self._tab_render_complete:
+            return
+        started = self._tab_switch_started
+        tab_text = self._tab_switch_text
+        if started and tab_text:
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            self._trace_record("tab_motion_nudge", elapsed_ms, f"tab={tab_text}")
+            self._force_tab_redraw(tab_text)
 
     def _init_maintain_movie_info(self, parent):
         if not MovieDataCaptureService:
@@ -1084,10 +1559,29 @@ class XJJDesktopApp:
         scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
         scrollable_frame = tk.Frame(canvas, bg=self.colors["bg"])
 
-        # 性能优化：移除 <Configure> 绑定，改为手动更新滚动区域
-        # 避免 Notebook 切换时的频繁重绘
         def update_scrollregion():
-            canvas.configure(scrollregion=canvas.bbox("all"))
+            self._settings_scroll_job = None
+            if not getattr(self, "_settings_scroll_dirty", True):
+                return
+            start_time = time.perf_counter()
+            bbox = canvas.bbox("all")
+            if not bbox:
+                bbox = (0, 0, 0, 0)
+            canvas.configure(scrollregion=bbox)
+            self._settings_scrollregion_cache = bbox
+            self._settings_scroll_dirty = False
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            if self._debug_tab_perf:
+                print(f"[perf] {datetime.now().isoformat(timespec='milliseconds')} update_scrollregion elapsed_ms={elapsed_ms:.2f}")
+            self._perf_record("update_scrollregion", elapsed_ms)
+
+        def mark_settings_scroll_dirty():
+            self._settings_scroll_dirty = True
+            notebook = getattr(self, "_maintain_notebook", None)
+            settings_id = getattr(self, "_maintain_settings_tab_id", None)
+            if notebook and settings_id and notebook.select() == settings_id:
+                if self._settings_scroll_job is None:
+                    self._settings_scroll_job = self.root.after_idle(update_scrollregion)
 
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
@@ -1095,6 +1589,7 @@ class XJJDesktopApp:
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
+        self._settings_scroll_dirty = True
         self._settings_canvas = canvas
         self._settings_update_scroll = update_scrollregion
 
@@ -1200,6 +1695,7 @@ class XJJDesktopApp:
                 self.tags_cb.set('')
                 self.tag_name_var.set('')
             check_changes()
+            mark_settings_scroll_dirty()
             
         def on_tag_select(event):
             selected = self.tags_cb.get()
@@ -1291,7 +1787,7 @@ class XJJDesktopApp:
         # Check initial state
         check_changes()
         # Initial scroll region update
-        self.root.after(100, update_scrollregion)
+        self._settings_scroll_job = self.root.after(100, update_scrollregion)
         
         def save_settings():
             new_title = self.settings_title_var.get().strip()

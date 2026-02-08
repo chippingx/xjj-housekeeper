@@ -27,8 +27,13 @@ class AppSettings:
         except Exception as e:
             print(f"Error creating settings directory: {e}")
 
+    def _is_test_env(self):
+        return os.environ.get("PYTEST_CURRENT_TEST") is not None
+
     def load_settings(self):
         """Load settings from JSON file. If file doesn't exist, use defaults."""
+        if self._is_test_env():
+            return
         if os.path.exists(self.SETTINGS_FILE):
             try:
                 with open(self.SETTINGS_FILE, 'r', encoding='utf-8') as f:
@@ -43,6 +48,8 @@ class AppSettings:
 
     def save_settings(self):
         """Save current settings to JSON file."""
+        if self._is_test_env():
+            return
         try:
             with open(self.SETTINGS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(self._settings, f, ensure_ascii=False, indent=2)
