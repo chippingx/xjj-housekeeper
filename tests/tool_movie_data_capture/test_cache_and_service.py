@@ -122,3 +122,36 @@ def test_search_movie_info_fuzzy(tmp_path: Path):
     assert results[1].video_code == "ABC-123"
     
     svc.close()
+
+
+def test_import_export_movie_info_file(tmp_path: Path):
+    svc = MovieDataCaptureService(db_path=str(tmp_path / "movie_data.db"))
+    try:
+        import_file = tmp_path / "import.txt"
+        import_file.write_text(
+            "\n".join(
+                [
+                    "actress_name|video_code|release_date|title",
+                    "Alice|AAA-001|2023-01-01|Title A",
+                    "||2023-02-01|Title B",
+                    "Bob|BBB-002|2023-13-01|Title C",
+                    "Cara|CCC-003||",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        result = svc.import_movie_info_file(str(import_file))
+        assert result["total"] == 4
+        assert result["imported"] == 2
+        assert result["skipped"] == 2
+        assert result["invalid_date"] == 1
+
+        export_file = tmp_path / "export.csv"
+        export_result = svc.export_movie_info_file(str(export_file))
+        assert export_result["total"] == 2
+        content = export_file.read_text(encoding="utf-8").splitlines()
+        assert content[0] == "actress_name|video_code|release_date|title"
+        assert any("Alice|AAA-001|2023-01-01|Title A" in line for line in content[1:])
+        assert any("Cara|CCC-003||" in line for line in content[1:])
+    finally:
+        svc.close()

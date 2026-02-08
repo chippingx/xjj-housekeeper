@@ -1,8 +1,7 @@
 
 import tkinter as tk
 from tkinter import ttk
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 import threading
 
 def _find_button_by_text(widget: tk.Widget, text: str):
@@ -41,16 +40,12 @@ def _select_tab_by_text(widget: tk.Widget, text: str):
             return True
     return False
 
-def test_pull_info_button_exists_and_handles_empty_input(monkeypatch):
+def test_movie_info_buttons_include_import_export(monkeypatch):
     from ui.tkinter.app import XJJDesktopApp
     
     # Mock MovieDataCaptureService to ensure page is rendered
     MockServiceClass = MagicMock()
     monkeypatch.setattr("ui.tkinter.app.MovieDataCaptureService", MockServiceClass)
-    
-    # Mock Toplevel
-    mock_toplevel = MagicMock()
-    monkeypatch.setattr("tkinter.Toplevel", mock_toplevel)
     
     app = XJJDesktopApp()
     app.show_page("maintain")
@@ -59,38 +54,36 @@ def test_pull_info_button_exists_and_handles_empty_input(monkeypatch):
     assert _select_tab_by_text(app.pages["maintain"], "影视资讯")
     app.root.update()
     
-    # Find Pull Info button
     btn_pull = _find_button_by_text(app.pages["maintain"], "拉取讯息")
-    assert btn_pull is not None, "未找到'拉取讯息'按钮"
+    assert btn_pull is None, "应移除'拉取讯息'按钮"
     
-    # Mock messagebox
-    mock_msg = MagicMock()
-    monkeypatch.setattr("tkinter.messagebox.showwarning", mock_msg)
-    
-    # Clear input
-    app.movie_info_keyword.set("")
-    
-    btn_pull.invoke()
-    
-    mock_msg.assert_called_once()
-    args, _ = mock_msg.call_args
-    assert "请输入查询关键字" in args[1]
+    btn_import = _find_button_by_text(app.pages["maintain"], "导入")
+    btn_export = _find_button_by_text(app.pages["maintain"], "导出")
+    assert btn_import is not None, "未找到'导入'按钮"
+    assert btn_export is not None, "未找到'导出'按钮"
     
     app.root.destroy()
 
-def test_pull_info_logic_video_code(monkeypatch):
+def test_import_button_triggers_service(monkeypatch):
     from ui.tkinter.app import XJJDesktopApp
     
     # Mock Service Class
     MockServiceClass = MagicMock()
     mock_instance = MockServiceClass.return_value
-    mock_instance.search_movie_info.return_value = []
+    mock_instance.import_movie_info_file.return_value = {
+        "total": 2,
+        "imported": 2,
+        "skipped": 0,
+        "invalid_date": 0,
+    }
     
     monkeypatch.setattr("ui.tkinter.app.MovieDataCaptureService", MockServiceClass)
     
     # Mock Toplevel
     mock_toplevel = MagicMock()
     monkeypatch.setattr("tkinter.Toplevel", mock_toplevel)
+    monkeypatch.setattr("tkinter.filedialog.askopenfilename", lambda **kwargs: "/tmp/data.csv")
+    monkeypatch.setattr("tkinter.messagebox.showinfo", MagicMock())
     
     # Mock Threading to run synchronously
     def mock_start(self):
@@ -102,35 +95,29 @@ def test_pull_info_logic_video_code(monkeypatch):
     assert _select_tab_by_text(app.pages["maintain"], "影视资讯")
     app.root.update()
     
-    btn_pull = _find_button_by_text(app.pages["maintain"], "拉取讯息")
-    assert btn_pull is not None
+    btn_import = _find_button_by_text(app.pages["maintain"], "导入")
+    assert btn_import is not None
+    btn_import.invoke()
     
-    # Test Video Code
-    app.movie_info_keyword.set("ABC-123")
-    btn_pull.invoke()
-    
-    # Verify search_movie_info called with video
-    mock_instance.search_movie_info.assert_called()
-    args, kwargs = mock_instance.search_movie_info.call_args
-    assert args[0] == "ABC-123"
-    assert args[1] == "video"
-    assert "check_cancellation" in kwargs
+    mock_instance.import_movie_info_file.assert_called_once_with("/tmp/data.csv")
     
     app.root.destroy()
 
-def test_pull_info_logic_actress(monkeypatch):
+def test_export_button_triggers_service(monkeypatch):
     from ui.tkinter.app import XJJDesktopApp
     
     # Mock Service Class
     MockServiceClass = MagicMock()
     mock_instance = MockServiceClass.return_value
-    mock_instance.search_movie_info.return_value = []
+    mock_instance.export_movie_info_file.return_value = {"total": 3}
     
     monkeypatch.setattr("ui.tkinter.app.MovieDataCaptureService", MockServiceClass)
     
     # Mock Toplevel
     mock_toplevel = MagicMock()
     monkeypatch.setattr("tkinter.Toplevel", mock_toplevel)
+    monkeypatch.setattr("tkinter.filedialog.asksaveasfilename", lambda **kwargs: "/tmp/export.csv")
+    monkeypatch.setattr("tkinter.messagebox.showinfo", MagicMock())
     
     # Mock Threading to run synchronously
     def mock_start(self):
@@ -142,17 +129,10 @@ def test_pull_info_logic_actress(monkeypatch):
     assert _select_tab_by_text(app.pages["maintain"], "影视资讯")
     app.root.update()
     
-    btn_pull = _find_button_by_text(app.pages["maintain"], "拉取讯息")
-    assert btn_pull is not None
+    btn_export = _find_button_by_text(app.pages["maintain"], "导出")
+    assert btn_export is not None
+    btn_export.invoke()
     
-    # Test Actress
-    app.movie_info_keyword.set("ABC")
-    btn_pull.invoke()
-    
-    # Verify search_movie_info called with actress
-    mock_instance.search_movie_info.assert_called()
-    args, kwargs = mock_instance.search_movie_info.call_args
-    assert args[0] == "ABC"
-    assert args[1] == "actress"
+    mock_instance.export_movie_info_file.assert_called_once_with("/tmp/export.csv")
     
     app.root.destroy()

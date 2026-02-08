@@ -1,4 +1,5 @@
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Dict
+from datetime import datetime
 from .impl.javmenu_client import JavMenuClient
 from .storage import ActressWork, MovieDataStorage, MovieInfoRow, get_default_database_path
 # Import SQLiteStorage to access local video info
@@ -14,6 +15,107 @@ class MovieDataCaptureService:
 
     def close(self) -> None:
         self.storage.close()
+
+    def import_movie_info_file(self, file_path: str) -> Dict[str, int]:
+        if not file_path:
+            raise ValueError("未选择导入文件")
+        with open(file_path, "r", encoding="utf-8-sig") as f:
+            lines = f.read().splitlines()
+        if not lines:
+            raise ValueError("导入文件为空")
+        header = lines[0].strip()
+        if header != "actress_name|video_code|release_date|title":
+            raise ValueError("导入文件表头格式错误，需为 actress_name|video_code|release_date|title")
+
+        total = 0
+        imported = 0
+        skipped = 0
+        invalid_date = 0
+        rows = []
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        for line in lines[1:]:
+            raw = line.strip()
+            if not raw:
+                continue
+            total += 1
+            parts = raw.split("|")
+            if len(parts) < 4:
+                parts += [""] * (4 - len(parts))
+            if len(parts) > 4:
+                parts = parts[:3] + ["|".join(parts[3:])]
+            actress_name = parts[0].strip()
+            video_code = parts[1].strip().upper()
+            release_date = parts[2].strip()
+            title = parts[3].strip()
+            if not actress_name or not video_code:
+                skipped += 1
+                continue
+            if release_date:
+                try:
+                    datetime.strptime(release_date, "%Y-%m-%d")
+                except Exception:
+                    invalid_date += 1
+                    skipped += 1
+                    continue
+            rows.append(
+                (
+                    actress_name,
+                    video_code,
+                    release_date or None,
+                    title or None,
+                    "manual_import",
+                    now,
+                    now,
+                )
+            )
+
+        if rows:
+            cur = self.storage.connection.cursor()
+            cur.executemany(
+                """
+                INSERT INTO movie_actress_works (
+                    actress_name, video_code, release_date, title, source, fetched_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(actress_name, video_code) DO UPDATE SET
+                    release_date = excluded.release_date,
+                    title = excluded.title,
+                    source = excluded.source,
+                    updated_at = excluded.updated_at
+                """,
+                rows,
+            )
+            self.storage.connection.commit()
+            imported = len(rows)
+
+        return {
+            "total": total,
+            "imported": imported,
+            "skipped": skipped,
+            "invalid_date": invalid_date,
+        }
+
+    def export_movie_info_file(self, file_path: str) -> Dict[str, int]:
+        if not file_path:
+            raise ValueError("未选择导出文件")
+        cur = self.storage.connection.cursor()
+        cur.execute(
+            """
+            SELECT actress_name, video_code, release_date, title
+            FROM movie_actress_works
+            ORDER BY release_date DESC, video_code ASC
+            """
+        )
+        rows = cur.fetchall()
+        with open(file_path, "w", encoding="utf-8", newline="") as f:
+            f.write("actress_name|video_code|release_date|title\n")
+            for row in rows:
+                actress_name = row["actress_name"] or ""
+                video_code = row["video_code"] or ""
+                release_date = row["release_date"] or ""
+                title = row["title"] or ""
+                f.write(f"{actress_name}|{video_code}|{release_date}|{title}\n")
+        return {"total": len(rows)}
 
     def search_movie_info(self, keyword: str, search_type: str = "all", check_cancellation=None) -> List[MovieInfoRow]:
         if check_cancellation:

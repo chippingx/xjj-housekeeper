@@ -1285,58 +1285,35 @@ class XJJDesktopApp:
         entry.bind("<Return>", lambda e: do_search(silent=False))
 
         self._make_action_button(form, text="搜索", command=lambda: do_search(silent=False)).pack(side=tk.LEFT, padx=4)
+        
+        right_actions = tk.Frame(form, bg=self.colors["bg"])
+        right_actions.pack(side=tk.RIGHT, padx=8)
 
-        def do_pull_info():
-            keyword = self.movie_info_keyword.get().strip()
-            if not keyword or keyword == "女艺人/视频号":
-                messagebox.showwarning("提示", "请输入查询关键字")
+        def do_import():
+            file_path = filedialog.askopenfilename(
+                filetypes=[("Movie Info Files", "*.txt *.csv"), ("All Files", "*.*")]
+            )
+            if not file_path:
                 return
-
-            # Determine type by simple regex for video code like ABC-123
-            # We assume video code has at least one hyphen and digits.
-            is_video_code = re.fullmatch(r"[A-Za-z0-9]+-\d+", keyword) is not None
-            search_type = "video" if is_video_code else "actress"
-
-            # Create modal dialog
             dialog = tk.Toplevel(self.root)
             dialog.title("请稍候")
-            dialog.geometry("300x150")
-            # Center the dialog
+            dialog.geometry("280x120")
             dialog.update_idletasks()
             x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (dialog.winfo_width() // 2)
             y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (dialog.winfo_height() // 2)
             dialog.geometry(f"+{x}+{y}")
-            
             dialog.transient(self.root)
             dialog.grab_set()
-            dialog.protocol("WM_DELETE_WINDOW", lambda: None) # Prevent closing via X
-            
-            tk.Label(dialog, text="影视资讯拉取中...", font=("Helvetica", 12)).pack(pady=20)
-            status_label = tk.Label(dialog, text="", fg="gray")
-            status_label.pack()
-
-            # Shared flag for cancellation
-            ctx = {"cancelled": False}
-
-            def cancel():
-                ctx["cancelled"] = True
-                status_label.config(text="正在中止...")
-                btn_cancel.config(state=tk.DISABLED)
-
-            btn_cancel = self._make_action_button(dialog, text="中止", command=cancel, padx=15)
-            btn_cancel.pack(pady=10)
+            dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+            tk.Label(dialog, text="正在导入...", font=("Helvetica", 12)).pack(pady=30)
 
             import threading
             def worker():
                 svc = MovieDataCaptureService()
-                rows = []
+                result = None
                 error = None
-                cancelled = False
                 try:
-                    # Pass lambda checking ctx["cancelled"]
-                    rows = svc.search_movie_info(keyword, search_type, check_cancellation=lambda: ctx["cancelled"])
-                    if ctx["cancelled"]:
-                        cancelled = True
+                    result = svc.import_movie_info_file(file_path)
                 except Exception as e:
                     error = e
                 finally:
@@ -1344,23 +1321,71 @@ class XJJDesktopApp:
                 
                 def on_finish():
                     dialog.destroy()
-                    if cancelled:
-                        messagebox.showinfo("提示", "操作已中止")
-                    elif error:
-                        messagebox.showerror("错误", str(error))
-                    else:
-                        render_results(rows)
-                        if not rows:
-                            # If no rows returned and not cancelled/error, it means no data found
-                            # render_results handles clearing table, but maybe show a message?
-                            # The requirement says "如果没有匹配就显示 暂无数据", which render_results does (empty table).
-                            pass
-
+                    if error:
+                        messagebox.showerror("导入失败", str(error))
+                        return
+                    total = result.get("total", 0)
+                    imported = result.get("imported", 0)
+                    skipped = result.get("skipped", 0)
+                    invalid_date = result.get("invalid_date", 0)
+                    messagebox.showinfo(
+                        "导入完成",
+                        f"总行数: {total}\n成功导入: {imported}\n跳过: {skipped}\n日期格式错误: {invalid_date}",
+                    )
+                    keyword = self.movie_info_keyword.get().strip()
+                    if keyword and keyword != "女艺人/视频号":
+                        do_search(silent=True)
+                
                 self.root.after(0, on_finish)
 
             threading.Thread(target=worker, daemon=True).start()
 
-        self._make_action_button(form, text="拉取讯息", command=do_pull_info).pack(side=tk.LEFT, padx=4)
+        def do_export():
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")],
+                initialfile="movie_info_export.csv",
+            )
+            if not file_path:
+                return
+            dialog = tk.Toplevel(self.root)
+            dialog.title("请稍候")
+            dialog.geometry("280x120")
+            dialog.update_idletasks()
+            x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (dialog.winfo_width() // 2)
+            y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (dialog.winfo_height() // 2)
+            dialog.geometry(f"+{x}+{y}")
+            dialog.transient(self.root)
+            dialog.grab_set()
+            dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+            tk.Label(dialog, text="正在导出...", font=("Helvetica", 12)).pack(pady=30)
+
+            import threading
+            def worker():
+                svc = MovieDataCaptureService()
+                result = None
+                error = None
+                try:
+                    result = svc.export_movie_info_file(file_path)
+                except Exception as e:
+                    error = e
+                finally:
+                    svc.close()
+                
+                def on_finish():
+                    dialog.destroy()
+                    if error:
+                        messagebox.showerror("导出失败", str(error))
+                        return
+                    total = result.get("total", 0)
+                    messagebox.showinfo("导出完成", f"导出条数: {total}")
+                
+                self.root.after(0, on_finish)
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        self._make_action_button(right_actions, text="导入", command=do_import).pack(side=tk.LEFT, padx=4)
+        self._make_action_button(right_actions, text="导出", command=do_export).pack(side=tk.LEFT, padx=4)
 
         # Results table
         table_container = tk.Frame(parent, bg=self.colors["bg"])
