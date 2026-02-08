@@ -64,8 +64,8 @@ def test_right_click_menu_has_preference_actions_and_updates_row(monkeypatch):
         assert isinstance(menu, tk.Menu), "右键菜单未挂载到表格 _context_menu"
 
         # 菜单前几项应为偏好相关动作
-        labels = [menu.entrycget(i, "label") for i in range(3)]
-        assert labels == ["标记为喜欢", "标记为不喜欢 (Trash)", "清除偏好"]
+        labels = [menu.entrycget(i, "label") for i in range(4)]
+        assert labels == ["标记为喜欢", "标记为不喜欢", "标记为已删除", "清除偏好"]
 
         # 触发“标记为喜欢”
         menu.invoke(0)
@@ -79,6 +79,13 @@ def test_right_click_menu_has_preference_actions_and_updates_row(monkeypatch):
         values = table.item(first_item, "values")
         assert values[pref_idx] == "喜欢"
         assert "pref_like" in table.item(first_item, "tags")
+
+        # 触发“标记为已删除”
+        menu.invoke(2)
+        assert calls[1] == ("TST-001", "deleted")
+        values = table.item(first_item, "values")
+        assert values[pref_idx] == "已删除"
+        assert "pref_deleted" in table.item(first_item, "tags")
     finally:
         if app is not None:
             try:

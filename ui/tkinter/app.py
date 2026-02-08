@@ -423,7 +423,7 @@ class XJJDesktopApp:
         # 偏好筛选
         self.preference_var = tk.StringVar(value="全部偏好")
         pref_cb = ttk.Combobox(form, textvariable=self.preference_var, state="readonly", width=10, font=("Helvetica", 13))
-        pref_cb['values'] = ("全部偏好", "喜欢", "不喜欢", "未标记")
+        pref_cb['values'] = ("全部偏好", "喜欢", "不喜欢", "已删除", "未标记")
         pref_cb.pack(side=tk.LEFT, padx=8, ipady=3)
 
         def _on_query_focus_in(_event):
@@ -480,6 +480,7 @@ class XJJDesktopApp:
         table._header_texts = header_texts
         table.tag_configure("pref_like", background="#FEF3C7")
         table.tag_configure("pref_dislike", background="#FEE2E2")
+        table.tag_configure("pref_deleted", background="#E5E7EB")
         
         # 滚动条
         vsb = ttk.Scrollbar(table_container, orient="vertical", command=table.yview)
@@ -574,7 +575,7 @@ class XJJDesktopApp:
             is_placeholder = (keyword == self.query_placeholder)
             
             # 获取偏好
-            pref_map = {"全部偏好": "all", "喜欢": "like", "不喜欢": "dislike", "未标记": "none"}
+            pref_map = {"全部偏好": "all", "喜欢": "like", "不喜欢": "dislike", "已删除": "deleted", "未标记": "none"}
             pref_label = self.preference_var.get()
             preference = pref_map.get(pref_label, "all")
             
@@ -2058,12 +2059,13 @@ class XJJDesktopApp:
                             val = str(val)
                     values.append(str(val) if val else "")
                 elif col == "preference":
-                    values.append("喜欢" if pref_status == "like" else "不喜欢" if pref_status == "dislike" else "")
+                    values.append("喜欢" if pref_status == "like" else "不喜欢" if pref_status == "dislike" else "已删除" if pref_status == "deleted" else "")
                 else: values.append(str(r.get(col, "")))
             
             tags = ()
             if pref_status == "like": tags = ("pref_like",)
             elif pref_status == "dislike": tags = ("pref_dislike",)
+            elif pref_status == "deleted": tags = ("pref_deleted",)
             
             item_id = table.insert("", tk.END, values=values, tags=tags)
             row_cache[item_id] = r
@@ -2210,7 +2212,8 @@ class XJJDesktopApp:
             menu.add_separator()
         
         menu.add_command(label="标记为喜欢", command=lambda: self._set_row_preference(table, item, video_label, "like"))
-        menu.add_command(label="标记为不喜欢 (Trash)", command=lambda: self._set_row_preference(table, item, video_label, "dislike"))
+        menu.add_command(label="标记为不喜欢", command=lambda: self._set_row_preference(table, item, video_label, "dislike"))
+        menu.add_command(label="标记为已删除", command=lambda: self._set_row_preference(table, item, video_label, "deleted"))
         menu.add_command(label="清除偏好", command=lambda: self._set_row_preference(table, item, video_label, None))
         menu.add_separator()
         
@@ -2390,12 +2393,13 @@ class XJJDesktopApp:
         cols = list(table["columns"])
         if "preference" in cols:
             idx = cols.index("preference")
-            display = "喜欢" if status == "like" else "不喜欢" if status == "dislike" else ""
+            display = "喜欢" if status == "like" else "不喜欢" if status == "dislike" else "已删除" if status == "deleted" else ""
             values[idx] = display
             table.item(item_id, values=values)
             
         if status == "like": table.item(item_id, tags=("pref_like",))
         elif status == "dislike": table.item(item_id, tags=("pref_dislike",))
+        elif status == "deleted": table.item(item_id, tags=("pref_deleted",))
         else: table.item(item_id, tags=())
 
     def _show_video_list_window(self, title: str, rows: list[dict]) -> None:

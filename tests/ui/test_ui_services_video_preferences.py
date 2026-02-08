@@ -35,6 +35,12 @@ def test_search_results_include_preference_status(tmp_path: Path):
     pref = results[0].get("preference")
     assert pref == "like"
 
+    service.set_video_preference("TST-001", "deleted")
+    results_deleted = service.search_videos("TST-001")
+    assert results_deleted
+    pref_deleted = results_deleted[0].get("preference")
+    assert pref_deleted == "deleted"
+
     # 清除偏好后，再次搜索应不再返回状态
     service.set_video_preference("TST-001", None)
     results2 = service.search_videos("TST-001")

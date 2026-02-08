@@ -30,6 +30,9 @@ def test_upsert_and_get_video_preference(tmp_path: Path):
     storage.upsert_video_preference("TST-001", "dislike")
     assert storage.get_video_preference("TST-001") == "dislike"
 
+    storage.upsert_video_preference("TST-001", "deleted")
+    assert storage.get_video_preference("TST-001") == "deleted"
+
     # 清除偏好后应为 None
     storage.clear_video_preference("TST-001")
     assert storage.get_video_preference("TST-001") is None
