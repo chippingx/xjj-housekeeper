@@ -99,20 +99,16 @@ would skip: target exists: /path/to/videos/sub/ABC-123.mp4 -> /path/to/videos/AB
   - 视频信息收集工具：临时收集、合并主库、查询、统计、导出
   - 提交钩子与政策文档：安装脚本与违规拦截
 
-- 已完成：
-  - Streamlit桌面应用（基于PyWebView）
-  - 启动脚本统一管理（startup目录）
-
 - 计划中：
   - 更丰富的统计报表与图表导出
   - 批量数据导入/导出的增强
 
 ## 桌面应用
-项目提供基于 Streamlit 的浏览器版与桌面包装版启动方式。
+项目提供原生 Tkinter 桌面客户端启动方式。
 
 ### 使用方式
-- 浏览器版（推荐）：双击 `startup/XJJ-Browser.command`，或运行 `poetry run python -m streamlit run ui/app.py --server.port 8501`。
-- 桌面包装版：双击 `startup/XJJ-Desktop.command`，内部通过 `poetry run` 启动本地服务并嵌入到窗口。
+- macOS：双击 `startup/XJJ-Desktop.command`
+- Windows：双击 `startup/XJJ-Desktop.bat`
 - 若遇到依赖问题：在项目根目录执行 `poetry install` 后再运行脚本。
 
 详细说明请参考：`startup/README.md`

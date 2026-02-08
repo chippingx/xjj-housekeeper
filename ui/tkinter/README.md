@@ -1,6 +1,6 @@
 # XJJ Housekeeper 桌面客户端（Tkinter）
 
-该目录为新的独立桌面客户端实现，采用 Python 内置的 Tkinter，无需 Streamlit。
+该目录为新的独立桌面客户端实现，采用 Python 内置的 Tkinter，无需本地 Web 服务。
 
 ## 运行
 
@@ -27,8 +27,7 @@ python -m ui.tkinter.app
 
 ## 注意
 
-- 本目录与 `ui/streamlit/` 并行存在，未删除 Streamlit 代码。
--- 首次运行如遇服务导入失败，请先确保 `tools/video_info_collector` 相关模块可导入并已初始化数据库路径。
+- 首次运行如遇服务导入失败，请先确保 `tools/video_info_collector` 相关模块可导入并已初始化数据库路径。
 
 ## 设计说明（查询页）
 

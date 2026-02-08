@@ -43,9 +43,10 @@ def check_sqlite_available() -> bool:
 def test_dependencies_declared_in_poetry():
     # 确认 pyproject.toml 中声明了最低限度依赖
     pyproject = open("pyproject.toml", "r", encoding="utf-8").read()
-    assert "streamlit" in pyproject, "必须在Poetry依赖中声明 streamlit"
     assert "pytest" in pyproject, "必须在Poetry dev/test 依赖中声明 pytest"
-    assert "selenium" in pyproject, "必须加入 selenium 以支持UI自动化"
+    assert "streamlit" not in pyproject, "Streamlit UI 已移除，依赖中不应再包含 streamlit"
+    assert "pywebview" not in pyproject, "Streamlit UI 已移除，依赖中不应再包含 pywebview"
+    assert "selenium" not in pyproject, "Streamlit UI 已移除，依赖中不应再包含 selenium"
 
 
 @pytest.mark.slow

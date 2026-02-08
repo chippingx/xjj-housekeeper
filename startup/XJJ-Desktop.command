@@ -1,5 +1,5 @@
 #!/bin/bash
-# 启动 Tkinter 桌面客户端（独立于 Streamlit）
+# 启动 Tkinter 桌面客户端
 
 echo "🖥️ 启动 XJJ 桌面客户端 (Tkinter)"
 echo "================================"
