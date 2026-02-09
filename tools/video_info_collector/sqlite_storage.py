@@ -101,7 +101,6 @@ class SQLiteStorage:
             CREATE TABLE IF NOT EXISTS video_master_list (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 video_code TEXT UNIQUE NOT NULL,
-                file_fingerprint TEXT,
                 status TEXT DEFAULT 'active',
                 file_count INTEGER DEFAULT 1,
                 first_seen TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -175,7 +174,6 @@ class SQLiteStorage:
         
         # video_master_list表索引
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_video_code ON video_master_list(video_code)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_fingerprint ON video_master_list(file_fingerprint)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_status ON video_master_list(status)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_last_updated ON video_master_list(last_updated)")
         
@@ -191,7 +189,6 @@ class SQLiteStorage:
         
         # video_master_list表索引
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_code ON video_master_list(video_code)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_fingerprint ON video_master_list(file_fingerprint)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_master_status ON video_master_list(status)")
         
         # merge_history表索引
@@ -1091,13 +1088,12 @@ class SQLiteStorage:
     
     # ==================== Video Master List 操作方法 ====================
     
-    def upsert_master_list_entry(self, video_code: str, file_fingerprint: str) -> int:
+    def upsert_master_list_entry(self, video_code: str) -> int:
         """
         插入或更新主列表条目
         
         Args:
             video_code: 视频编码
-            file_fingerprint: 文件指纹
             
         Returns:
             int: 主列表条目ID
@@ -1116,19 +1112,18 @@ class SQLiteStorage:
             # 更新现有条目
             cursor.execute("""
                 UPDATE video_master_list 
-                SET file_fingerprint = ?, 
-                    file_count = file_count + 1,
+                SET file_count = file_count + 1,
                     last_updated = CURRENT_TIMESTAMP
                 WHERE id = ?
-            """, (file_fingerprint, existing['id']))
+            """, (existing['id'],))
             master_id = existing['id']
         else:
             # 插入新条目
             cursor.execute("""
                 INSERT INTO video_master_list (
-                    video_code, file_fingerprint, status, file_count
-                ) VALUES (?, ?, 'active', 1)
-            """, (video_code, file_fingerprint))
+                    video_code, status, file_count
+                ) VALUES (?, 'active', 1)
+            """, (video_code,))
             master_id = cursor.lastrowid
         
         self.connection.commit()

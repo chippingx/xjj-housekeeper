@@ -251,7 +251,7 @@ def test_database_integration():
             assert col in columns, f"video_info表缺少列: {col}"
         
         # 测试master list操作
-        storage.upsert_master_list_entry("TEST001", "fingerprint123")
+        storage.upsert_master_list_entry("TEST001")
         result = storage.get_master_list_by_code("TEST001")
         assert result is not None, "master list插入/查询失败"
         

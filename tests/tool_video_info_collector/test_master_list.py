@@ -98,8 +98,8 @@ class TestMasterList(unittest.TestCase):
         
         self.assertIsNotNone(result, "应该能找到插入的记录")
         self.assertEqual(result[1], test_code, "video_code应该匹配")  # video_code是第1个字段
-        self.assertEqual(result[3], 'active', "状态应该是active")  # status是第3个字段
-        self.assertEqual(result[4], 1, "文件计数应该是1")  # file_count是第4个字段
+        self.assertEqual(result[2], 'active', "状态应该是active")  # status列位置更新
+        self.assertEqual(result[3], 1, "文件计数应该是1")  # file_count列位置更新
         
         conn.close()
     

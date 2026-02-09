@@ -68,7 +68,7 @@ class TestInitDbCommand:
             # 验证video_master_list表的关键字段
             master_list_columns = [col['name'] for col in table_info['video_master_list']['columns']]
             required_master_columns = [
-                'id', 'video_code', 'file_fingerprint', 'status', 'file_count'
+                'id', 'video_code', 'status', 'file_count'
             ]
             
             for column in required_master_columns:

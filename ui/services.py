@@ -344,7 +344,17 @@ class VideoService:
                 except Exception:
                     pass
                 try:
-                    self.storage.mark_master_list_as_deleted(code)
+                    self.storage.update_master_list_file_count(code)
+                    cur = self.storage.connection.cursor()
+                    cur.execute("SELECT file_count FROM video_master_list WHERE video_code = ?", (code,))
+                    row = cur.fetchone()
+                    cnt = int(row[0]) if row else 0
+                    new_status = 'deleted' if cnt == 0 else ('active' if cnt == 1 else 'duplicate')
+                    cur.execute(
+                        "UPDATE video_master_list SET status = ?, last_updated = CURRENT_TIMESTAMP WHERE video_code = ?",
+                        (new_status, code),
+                    )
+                    self.storage.connection.commit()
                 except Exception:
                     pass
             return ok

@@ -121,3 +121,36 @@ def test_sync_deleted_preferences_updates_master_and_file_status(tmp_path: Path)
     cur.execute("SELECT file_status FROM video_info WHERE video_code = ?", ("TST-003",))
     file_status = cur.fetchone()[0]
     assert file_status == "deleted"
+
+
+def test_delete_video_updates_master_list_after_remove(tmp_path: Path):
+    service = _create_service_with_tmp_db(tmp_path)
+    storage = service.storage
+    conn = storage.connection
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        INSERT INTO video_info (file_path, filename, file_size, duration_formatted, resolution, created_time, video_code, file_status)
+        VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?)
+        """,
+        ("/tmp/tst004.mp4", "TST-004.mp4", 20 * 1024 * 1024, "00:02:00", "1920x1080", "TST-004", "present"),
+    )
+    cur.execute(
+        """
+        INSERT INTO video_master_list (video_code, status, file_count)
+        VALUES (?, 'active', 1)
+        """,
+        ("TST-004",),
+    )
+    conn.commit()
+
+    cur.execute("SELECT id FROM video_info WHERE video_code = ?", ("TST-004",))
+    video_id = cur.fetchone()[0]
+    assert service.delete_video(video_id) is True
+
+    cur.execute("SELECT file_count, status, last_updated FROM video_master_list WHERE video_code = ?", ("TST-004",))
+    row = cur.fetchone()
+    assert row[0] == 0
+    assert row[1] == "deleted"
+    assert row[2] is not None

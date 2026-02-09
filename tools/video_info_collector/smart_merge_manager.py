@@ -478,8 +478,7 @@ class SmartMergeManager:
             else:
                 # 对于其他事件，使用原有的upsert逻辑
                 self.storage.upsert_master_list_entry(
-                    video_info.video_code,
-                    video_info.file_fingerprint
+                    video_info.video_code
                 )
     
     def _update_existing_video(self, existing_video: VideoInfo, new_video: VideoInfo):
