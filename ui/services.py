@@ -52,6 +52,7 @@ class VideoService:
         self.scanner = None
         self.merge_manager = None
         self.error_handler = ErrorHandler()
+        self._deleted_pref_synced = False
         
     def _ensure_storage(self):
         """确保存储连接已初始化"""
@@ -62,6 +63,12 @@ class VideoService:
             
             self.storage = SQLiteStorage(self.db_path)
             self.merge_manager = SmartMergeManager(self.storage)
+            if not self._deleted_pref_synced:
+                try:
+                    self._sync_deleted_preferences()
+                except Exception:
+                    pass
+                self._deleted_pref_synced = True
     
     def search_videos(self, keyword: str) -> List[Dict[str, str]]:
         """搜索视频（兼容旧接口，只返回列表）。"""
@@ -321,6 +328,31 @@ class VideoService:
         except Exception as e:
             self.error_handler.handle_database_error(f"随机挑选视频失败: {e}", self.db_path, "random_videos")
             return []
+
+    def delete_video(self, video_id: int) -> bool:
+        """删除指定ID的视频记录，并清理相关偏好记录。"""
+        try:
+            self._ensure_storage()
+            info = self.storage.get_video_info_by_id(video_id)
+            if not info:
+                return False
+            code = (info.get("video_code") or "").strip()
+            ok = self.storage.delete_video_info(video_id)
+            if ok and code:
+                try:
+                    self.storage.clear_video_preference(code)
+                except Exception:
+                    pass
+                try:
+                    self.storage.mark_master_list_as_deleted(code)
+                except Exception:
+                    pass
+            return ok
+        except Exception as e:
+            self.error_handler.handle_database_error(
+                f"删除视频记录失败: {e}", self.db_path, "delete_video"
+            )
+            return False
 
     def latest_videos_paged(
         self, days: int = 14, page: int = 1, page_size: int = 100, ensure_accessible: bool = True
@@ -707,6 +739,20 @@ class VideoService:
                 return
 
             self.storage.upsert_video_preference(code_key, status)
+            if status == "deleted":
+                try:
+                    self.storage.mark_master_list_as_deleted(code_key)
+                except Exception:
+                    pass
+                try:
+                    cur = self.storage.connection.cursor()
+                    cur.execute(
+                        "UPDATE video_info SET file_status = 'deleted', updated_time = CURRENT_TIMESTAMP WHERE video_code = ?",
+                        (code_key,),
+                    )
+                    self.storage.connection.commit()
+                except Exception:
+                    pass
         except Exception as e:
             self.error_handler.handle_database_error(
                 f"设置视频偏好失败: {e}", self.db_path, "set_video_preference"
@@ -725,6 +771,50 @@ class VideoService:
                 f"获取视频偏好失败: {e}", self.db_path, "get_video_preference"
             )
             return None
+    
+    def _sync_deleted_preferences(self) -> None:
+        try:
+            cur = self.storage.connection.cursor()
+            cur.execute("SELECT video_code FROM video_preferences WHERE status = 'deleted'")
+            rows = cur.fetchall()
+            codes = []
+            for r in rows:
+                try:
+                    codes.append(r["video_code"])
+                except Exception:
+                    try:
+                        codes.append(r[0])
+                    except Exception:
+                        continue
+            for code in codes:
+                c = (code or "").strip()
+                if not c:
+                    continue
+                try:
+                    self.storage.mark_master_list_as_deleted(c)
+                except Exception:
+                    pass
+                try:
+                    cur2 = self.storage.connection.cursor()
+                    cur2.execute(
+                        "UPDATE video_info SET file_status = 'deleted', updated_time = CURRENT_TIMESTAMP WHERE video_code = ?",
+                        (c,),
+                    )
+                    self.storage.connection.commit()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def sync_deleted_preferences(self) -> None:
+        if self._deleted_pref_synced:
+            return
+        try:
+            self._ensure_storage()
+            self._sync_deleted_preferences()
+            self._deleted_pref_synced = True
+        except Exception:
+            pass
     
     def update_video_tags(self, video_id: int, tags: List[str]) -> bool:
         """更新视频标签。"""

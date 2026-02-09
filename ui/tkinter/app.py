@@ -480,6 +480,7 @@ class XJJDesktopApp:
             table.column(col, width=width, anchor="w" if col in left_cols else "e")
         
         table._header_texts = header_texts
+        table._context_role = "query"
         table.tag_configure("pref_like", background="#FEF3C7")
         table.tag_configure("pref_dislike", background="#FEE2E2")
         table.tag_configure("pref_deleted", background="#E5E7EB")
@@ -1953,6 +1954,7 @@ class XJJDesktopApp:
 
         # 保存列名映射供排序使用
         table._header_texts = header_texts
+        table._context_role = "maintain"
 
         vsb = ttk.Scrollbar(table_container, orient="vertical", command=table.yview)
         table.configure(yscrollcommand=vsb.set)
@@ -1991,6 +1993,7 @@ class XJJDesktopApp:
                     btn_broken.configure(state=tk.NORMAL, text=orig)
                     # 按视频升序排序
                     res.sort(key=lambda x: x.get('video') or x.get('filename') or '')
+                    table._context_role = "maintain"
                     self._render_table(table, res)
                 except queue.Empty:
                     self.root.after(100, check)
@@ -2028,6 +2031,7 @@ class XJJDesktopApp:
                     btn_dup.configure(state=tk.NORMAL, text=orig)
                     # 按视频升序排序
                     res.sort(key=lambda x: x.get('video') or x.get('filename') or '')
+                    table._context_role = "maintain"
                     self._render_table(table, res)
                 except queue.Empty:
                     self.root.after(100, check)
@@ -2037,6 +2041,7 @@ class XJJDesktopApp:
 
         btn_dup.configure(command=show_duplicate_videos)
         btn_dup.pack(side=tk.LEFT, padx=6)
+
 
     # ================= 通用辅助 =================
     def _render_table(self, table: ttk.Treeview, rows: list[dict]) -> None:
@@ -2225,8 +2230,10 @@ class XJJDesktopApp:
         item = table.identify_row(event.y)
         if not item: return
         row = getattr(table, "_row_cache", {}).get(item, {})
+        role = getattr(table, "_context_role", "query")
         file_path = row.get("file_path")
-        if not file_path: return
+        if role == "query":
+            if not file_path: return
         
         menu = tk.Menu(self.root, tearoff=0)
         setattr(table, "_context_menu", menu)
@@ -2234,31 +2241,101 @@ class XJJDesktopApp:
         video_code = row.get("video_code") or ""
         video_id = row.get("id")
         
-        if video_code:
-            actress_label = row.get("actress") or ""
-            menu.add_command(label="编辑女艺人...", command=lambda: self._open_actress_manager(table, item, video_code, actress_label))
+        if role.startswith("maintain"):
+            if video_id:
+                menu.add_command(label="删除记录...", command=lambda: self._confirm_and_delete(table, item, int(video_id), video_label))
+            else:
+                menu.add_command(label="删除记录...", state=tk.DISABLED)
         else:
-            menu.add_command(label="编辑女艺人...", state=tk.DISABLED)
-        
-        if video_id:
-            tags_label = row.get("tags") or ""
-            menu.add_command(label="编辑标签...", command=lambda: self._open_tags_manager(table, item, video_id, tags_label))
+            if video_code:
+                actress_label = row.get("actress") or ""
+                menu.add_command(label="编辑女艺人...", command=lambda: self._open_actress_manager(table, item, video_code, actress_label))
+            else:
+                menu.add_command(label="编辑女艺人...", state=tk.DISABLED)
+            
+            if video_id:
+                tags_label = row.get("tags") or ""
+                menu.add_command(label="编辑标签...", command=lambda: self._open_tags_manager(table, item, video_id, tags_label))
+                menu.add_separator()
+            
+            menu.add_command(label="标记为喜欢", command=lambda: self._set_row_preference(table, item, video_label, "like"))
+            menu.add_command(label="标记为不喜欢", command=lambda: self._set_row_preference(table, item, video_label, "dislike"))
+            menu.add_command(label="标记为已删除", command=lambda: self._set_row_preference(table, item, video_label, "deleted"))
+            menu.add_command(label="清除偏好", command=lambda: self._set_row_preference(table, item, video_label, None))
             menu.add_separator()
-        
-        menu.add_command(label="标记为喜欢", command=lambda: self._set_row_preference(table, item, video_label, "like"))
-        menu.add_command(label="标记为不喜欢", command=lambda: self._set_row_preference(table, item, video_label, "dislike"))
-        menu.add_command(label="标记为已删除", command=lambda: self._set_row_preference(table, item, video_label, "deleted"))
-        menu.add_command(label="清除偏好", command=lambda: self._set_row_preference(table, item, video_label, None))
-        menu.add_separator()
-        
-        players = self._get_system_video_players()
-        for name, path in players.items():
-            menu.add_command(label=name, command=lambda p=path: self._play_video_with_player(Path(file_path), p))
+            
+            players = self._get_system_video_players()
+            for name, path in players.items():
+                menu.add_command(label=name, command=lambda p=path: self._play_video_with_player(Path(file_path), p))
             
         try:
             menu.tk_popup(event.x_root, event.y_root)
         except Exception:
             return
+
+    def _confirm_and_delete(self, table: ttk.Treeview, item_id: str, video_id: int, video_label: str) -> None:
+        dialog = tk.Toplevel(self.root)
+        dialog.withdraw()
+        dialog.title("确认删除")
+        dialog.geometry("420x180")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.focus_set()
+        
+        dialog.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (dialog.winfo_width() // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+        dialog.deiconify()
+        
+        container = tk.Frame(dialog, bg=self.colors["bg"], padx=16, pady=16)
+        container.pack(fill=tk.BOTH, expand=True)
+        
+        title = tk.Label(container, text="删除记录确认", bg=self.colors["bg"], fg=self.colors["brand"], font=("Helvetica", 16, "bold"))
+        title.pack(anchor="w")
+        
+        msg = tk.Label(
+            container,
+            text=f"确认将删除 {video_label} 视频？",
+            bg=self.colors["bg"], fg=self.colors["gray800"], justify="left", wraplength=380
+        )
+        msg.pack(anchor="w", pady=(8, 12))
+        
+        btns = tk.Frame(container, bg=self.colors["bg"])
+        btns.pack(fill=tk.X, pady=(6, 0))
+        
+        result = {"confirm": False}
+        def do_cancel():
+            result["confirm"] = False
+            dialog.destroy()
+        def do_delete():
+            result["confirm"] = True
+            dialog.destroy()
+        
+        cancel_btn = self._make_action_button(btns, text="取 消", command=do_cancel, padx=20, pady=8)
+        cancel_btn.pack(side=tk.RIGHT, padx=6)
+        delete_btn = self._make_action_button(btns, text="删 除", command=do_delete, padx=20, pady=8)
+        delete_btn.configure(bg=self.colors["brand"], fg="black", activebackground=self.colors["brand"])
+        delete_btn.pack(side=tk.RIGHT, padx=6)
+        
+        dialog.wait_window(dialog)
+        if not result["confirm"]:
+            return
+        
+        try:
+            from ui.services import VideoService
+            svc = VideoService()
+            ok = svc.delete_video(video_id)
+        except Exception as e:
+            messagebox.showerror("删除失败", str(e))
+            return
+        
+        if ok:
+            row_cache = getattr(table, "_row_cache", {})
+            table.delete(item_id)
+            row_cache.pop(item_id, None)
+        else:
+            messagebox.showwarning("未删除", "删除操作未成功")
 
     def _open_tags_manager(self, table: ttk.Treeview, item_id: str, video_id: int, current_tags_str: str) -> None:
         """打开标签管理对话框"""
