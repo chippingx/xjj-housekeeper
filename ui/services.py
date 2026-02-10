@@ -520,42 +520,29 @@ class VideoService:
             return []
 
     def duplicate_videos(self, ensure_accessible: bool = True) -> List[Dict[str, str]]:
-        """返回所有疑似重复的视频（文件大小相同的视频）。"""
+        """返回所有重复的视频（video_code 在 video_info 中出现多条记录）。"""
         try:
             self._ensure_storage()
             cursor = self.storage.connection.cursor()
             
-            # 查找有重复文件大小的记录
+            # 查找 video_code 重复的记录
             cursor.execute(
                 """
                 SELECT v.id, v.video_code, v.filename, v.file_path, v.file_size, v.duration_formatted, v.resolution, v.updated_time
                 FROM video_info v
                 JOIN (
-                    SELECT file_size
+                    SELECT UPPER(TRIM(video_code)) AS norm_code
                     FROM video_info
-                    WHERE file_size IS NOT NULL AND file_size > 0
-                    GROUP BY file_size
+                    WHERE video_code IS NOT NULL AND TRIM(video_code) != ''
+                    GROUP BY norm_code
                     HAVING COUNT(*) > 1
-                ) dup ON v.file_size = dup.file_size
-                ORDER BY v.file_size DESC, v.filename
+                ) dup ON UPPER(TRIM(v.video_code)) = dup.norm_code
+                ORDER BY dup.norm_code ASC, v.filename
                 """
             )
             rows = cursor.fetchall()
             
-            if not ensure_accessible:
-                return self._rows_to_results(rows)
-
-            filtered = []
-            for row in rows:
-                try:
-                    file_path = row['file_path']
-                except (IndexError, KeyError):
-                    file_path = None
-                    
-                if file_path and os.path.exists(file_path):
-                    filtered.append(row)
-            
-            return self._rows_to_results(filtered)
+            return self._rows_to_results(rows)
 
         except Exception as e:
             self.error_handler.handle_database_error(f"查询重复视频失败: {e}", self.db_path, "duplicate_videos")
