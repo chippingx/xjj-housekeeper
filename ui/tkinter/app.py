@@ -4,14 +4,15 @@ import sys
 from pathlib import Path
 import re
 import os
+import json
 from datetime import datetime
 import time
 
-# 兼容直接运行：确保项目根目录在 sys.path 中
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 if __package__ is None or __package__ == "":
-    project_root = Path(__file__).resolve().parents[2]
-    if str(project_root) not in sys.path:
-        sys.path.append(str(project_root))
+    if str(PROJECT_ROOT) not in sys.path:
+        sys.path.append(str(PROJECT_ROOT))
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -57,6 +58,10 @@ except ImportError:
         def app_title(self): return "小姐姐の管家"
         @app_title.setter
         def app_title(self, v): pass
+        @property
+        def language(self): return "zh_CN"
+        @language.setter
+        def language(self, v): pass
         def save_settings(self): pass
 
 
@@ -80,8 +85,7 @@ def run_filename_adjustment(
     if rules_env:
         formatter = FilenameFormatter(default_rules_path=None)
     else:
-        project_root = Path(__file__).resolve().parents[2]
-        candidate_rules_path = project_root / "output" / "video_info_collector" / "conf" / "rename_rules.yaml"
+        candidate_rules_path = PROJECT_ROOT / "output" / "video_info_collector" / "conf" / "rename_rules.yaml"
         formatter = FilenameFormatter(default_rules_path=str(candidate_rules_path) if candidate_rules_path.exists() else None)
     results = formatter.rename_in_directory(
         base_path,
@@ -106,11 +110,48 @@ def run_filename_adjustment(
     return {"summary": summary, "log_lines": log_lines}
 
 
+class I18n:
+    def __init__(self, i18n_dir: Path, language: str, fallback: str = "zh_CN"):
+        self.i18n_dir = i18n_dir
+        self.language = language or fallback
+        self.fallback = fallback
+        self._translations: dict[str, dict] = {}
+        self._load_language(self.language)
+        if self.fallback != self.language:
+            self._load_language(self.fallback)
+
+    def _load_language(self, lang: str):
+        if lang in self._translations:
+            return
+        path = self.i18n_dir / f"{lang}.json"
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                self._translations[lang] = json.load(f) or {}
+        except Exception:
+            self._translations[lang] = {}
+
+    def t(self, key: str, default: str | None = None, **kwargs):
+        data = self._translations.get(self.language, {})
+        fallback = self._translations.get(self.fallback, {})
+        if key in data:
+            value = data[key]
+        elif key in fallback:
+            value = fallback[key]
+        else:
+            value = default if default is not None else key
+        try:
+            return str(value).format(**kwargs)
+        except Exception:
+            return str(value)
+
+
 class XJJDesktopApp:
     def __init__(self) -> None:
         self.settings = AppSettings()
+        self.i18n = I18n(PROJECT_ROOT / "i18n", self.settings.language)
+        self._init_i18n_labels()
         self.root = tk.Tk()
-        self.root.title(self.settings.app_title)
+        self.root.title(self.settings.app_title or self.t("app.title"))
         self.root.geometry("1280x800")
         self.root.configure(bg="#F7F9FC")
 
@@ -192,6 +233,43 @@ class XJJDesktopApp:
                     delay_ms=self._perf_switch_delay_ms,
                 ),
             )
+
+    def _init_i18n_labels(self) -> None:
+        self.t = self.i18n.t
+        self._column_labels = {
+            "video": self.t("table.header.video"),
+            "actress": self.t("table.header.actress"),
+            "tags": self.t("table.header.tags"),
+            "file_path": self.t("table.header.file_path"),
+            "file_size": self.t("table.header.file_size"),
+            "duration": self.t("table.header.duration"),
+            "resolution": self.t("table.header.resolution"),
+            "updated_time": self.t("table.header.updated_time"),
+            "preference": self.t("table.header.preference")
+        }
+        self._preference_labels = {
+            "all": self.t("preference.all"),
+            "like": self.t("preference.like"),
+            "dislike": self.t("preference.dislike"),
+            "deleted": self.t("preference.deleted"),
+            "none": self.t("preference.none")
+        }
+        self._preference_label_to_value = {v: k for k, v in self._preference_labels.items()}
+        self._language_labels = {
+            "zh_CN": self.t("language.zh_CN"),
+            "zh_TW": self.t("language.zh_TW"),
+            "en_US": self.t("language.en_US"),
+            "ja_JP": self.t("language.ja_JP"),
+            "ko_KR": self.t("language.ko_KR"),
+            "th_TH": self.t("language.th_TH")
+        }
+        self._language_label_to_value = {v: k for k, v in self._language_labels.items()}
+        self._maintain_tab_labels = {
+            "import": self.t("maintain.tab.import"),
+            "manage": self.t("maintain.tab.manage"),
+            "movie_info": self.t("maintain.tab.movie_info"),
+            "settings": self.t("maintain.tab.settings")
+        }
 
     def _init_styles(self) -> None:
         style = ttk.Style()
@@ -293,8 +371,8 @@ class XJJDesktopApp:
 
         # 导航按钮容器
         self.nav_btns = {}
-        self._add_sidebar_btn("query", "查    询", lambda: self.show_page("query"))
-        self._add_sidebar_btn("maintain", "维    护", lambda: self.show_page("maintain"))
+        self._add_sidebar_btn("query", self.t("sidebar.query"), lambda: self.show_page("query"))
+        self._add_sidebar_btn("maintain", self.t("sidebar.maintain"), lambda: self.show_page("maintain"))
 
         # 2. 主内容区域 (Main)
         self.main_area = tk.Frame(self.root, bg=self.colors["bg"])
@@ -391,9 +469,9 @@ class XJJDesktopApp:
 
     def _attach_entry_context_menu(self, entry: tk.Entry) -> None:
         menu = tk.Menu(entry, tearoff=0)
-        menu.add_command(label="剪切", command=lambda: entry.event_generate("<<Cut>>"))
-        menu.add_command(label="复制", command=lambda: entry.event_generate("<<Copy>>"))
-        menu.add_command(label="粘贴", command=lambda: entry.event_generate("<<Paste>>"))
+        menu.add_command(label=self.t("context.cut"), command=lambda: entry.event_generate("<<Cut>>"))
+        menu.add_command(label=self.t("context.copy"), command=lambda: entry.event_generate("<<Copy>>"))
+        menu.add_command(label=self.t("context.paste"), command=lambda: entry.event_generate("<<Paste>>"))
 
         def show_menu(event: tk.Event):
             menu.tk_popup(event.x_root, event.y_root)
@@ -415,7 +493,7 @@ class XJJDesktopApp:
         form = tk.Frame(content, bg=self.colors["bg"])
         form.pack(fill=tk.X)
 
-        self.query_placeholder = "视频号/标签/女艺人"
+        self.query_placeholder = self.t("query.placeholder")
         self.query_var = tk.StringVar(value=self.query_placeholder)
         entry = tk.Entry(form, textvariable=self.query_var, width=40, font=("Helvetica", 14))
         entry.pack(side=tk.LEFT, padx=(0, 8), ipady=5)
@@ -423,9 +501,15 @@ class XJJDesktopApp:
         self.query_entry = entry
 
         # 偏好筛选
-        self.preference_var = tk.StringVar(value="全部偏好")
+        self.preference_var = tk.StringVar(value=self._preference_labels["all"])
         pref_cb = ttk.Combobox(form, textvariable=self.preference_var, state="readonly", width=10, font=("Helvetica", 13))
-        pref_cb['values'] = ("全部偏好", "喜欢", "不喜欢", "已删除", "未标记")
+        pref_cb['values'] = (
+            self._preference_labels["all"],
+            self._preference_labels["like"],
+            self._preference_labels["dislike"],
+            self._preference_labels["deleted"],
+            self._preference_labels["none"]
+        )
         pref_cb.pack(side=tk.LEFT, padx=8, ipady=3)
 
         def _on_query_focus_in(_event):
@@ -456,17 +540,7 @@ class XJJDesktopApp:
         table = ttk.Treeview(table_container, columns=columns, show="headings")
         left_cols = {"video", "actress", "tags", "file_path", "preference"}
         
-        header_texts = {
-            "video": "视频",
-            "actress": "女艺人",
-            "tags": "标签",
-            "file_path": "路径",
-            "file_size": "大小",
-            "duration": "时长",
-            "resolution": "分辨率",
-            "updated_time": "更新时间",
-            "preference": "偏好"
-        }
+        header_texts = dict(self._column_labels)
         
         for col in columns:
             text = header_texts.get(col, col)
@@ -499,13 +573,13 @@ class XJJDesktopApp:
         self.page_var = tk.IntVar(value=1)
         
         # 左侧分页按钮
-        btn_prev = self._make_action_button(page_frame, text="< 上一页", padx=10)
+        btn_prev = self._make_action_button(page_frame, text=self.t("pagination.prev"), padx=10)
         btn_prev.pack(side=tk.LEFT)
         
-        page_label = tk.Label(page_frame, text="第 1 页", bg=self.colors["bg"], fg=self.colors["gray700"], font=("Helvetica", 12))
+        page_label = tk.Label(page_frame, text=self.t("pagination.page_simple", page=1), bg=self.colors["bg"], fg=self.colors["gray700"], font=("Helvetica", 12))
         page_label.pack(side=tk.LEFT, padx=15)
         
-        btn_next = self._make_action_button(page_frame, text="下一页 >", padx=10)
+        btn_next = self._make_action_button(page_frame, text=self.t("pagination.next"), padx=10)
         btn_next.pack(side=tk.LEFT)
 
         # 搜索逻辑
@@ -558,7 +632,7 @@ class XJJDesktopApp:
 
             if mode == "search":
                 self.query_var.set(target_state.get("keyword", ""))
-                self.preference_var.set(target_state.get("preference_label", "全部偏好"))
+                self.preference_var.set(target_state.get("preference_label", self._preference_labels["all"]))
                 self.page_var.set(target_state.get("page", 1))
                 do_search_live(reset_page=False, save_history=False)
             elif mode == "latest":
@@ -578,9 +652,8 @@ class XJJDesktopApp:
             is_placeholder = (keyword == self.query_placeholder)
             
             # 获取偏好
-            pref_map = {"全部偏好": "all", "喜欢": "like", "不喜欢": "dislike", "已删除": "deleted", "未标记": "none"}
             pref_label = self.preference_var.get()
-            preference = pref_map.get(pref_label, "all")
+            preference = self._preference_label_to_value.get(pref_label, "all")
             
             if reset_page:
                 self.page_var.set(1)
@@ -602,7 +675,7 @@ class XJJDesktopApp:
             # 如果是 placeholder 且没有偏好筛选，则视为无搜索
             if (not keyword or is_placeholder) and preference == "all":
                 self._render_table(table, [])
-                page_label.config(text="第 1 页")
+                page_label.config(text=self.t("pagination.page_simple", page=1))
                 btn_prev.config(state=tk.DISABLED)
                 btn_next.config(state=tk.DISABLED)
                 return
@@ -619,7 +692,7 @@ class XJJDesktopApp:
                 
                 # 更新分页 UI
                 total_pages = (total + page_size - 1) // page_size if total > 0 else 1
-                page_label.config(text=f"第 {page} / {total_pages} 页 (共 {total} 条)")
+                page_label.config(text=self.t("pagination.page_full", page=page, total_pages=total_pages, total=total))
                 
                 btn_prev.config(state=tk.NORMAL if page > 1 else tk.DISABLED)
                 btn_next.config(state=tk.NORMAL if page < total_pages else tk.DISABLED)
@@ -687,7 +760,7 @@ class XJJDesktopApp:
             results = self._sort_results_by_file_size_desc(results)
             self._render_table(table, results)
 
-        self._make_action_button(form, text="随机挑选", command=do_random_pick).pack(side=tk.LEFT, padx=4)
+        self._make_action_button(form, text=self.t("query.random_button"), command=do_random_pick).pack(side=tk.LEFT, padx=4)
 
         def do_latest_videos(reset_page=True, save_history=True):
             # 恢复分页组件
@@ -712,7 +785,7 @@ class XJJDesktopApp:
                 
                 # 更新分页 UI
                 total_pages = (total + page_size - 1) // page_size if total > 0 else 1
-                page_label.config(text=f"第 {page} / {total_pages} 页 (共 {total} 条)")
+                page_label.config(text=self.t("pagination.page_full", page=page, total_pages=total_pages, total=total))
                 
                 btn_prev.config(state=tk.NORMAL if page > 1 else tk.DISABLED)
                 btn_next.config(state=tk.NORMAL if page < total_pages else tk.DISABLED)
@@ -721,7 +794,7 @@ class XJJDesktopApp:
                 print(f"Latest videos error: {e}")
                 self._render_table(table, [])
 
-        self._make_action_button(form, text="最新视频", command=do_latest_videos).pack(side=tk.LEFT, padx=4)
+        self._make_action_button(form, text=self.t("query.latest_button"), command=do_latest_videos).pack(side=tk.LEFT, padx=4)
 
         table.bind("<Double-1>", lambda e: self._on_table_double_click(table, e))
         # 兼容 macOS 和 Windows 的右键绑定
@@ -764,18 +837,23 @@ class XJJDesktopApp:
             "settings": tk.Frame(notebook, bg=self.colors["bg"]),
         }
 
-        notebook.add(tab_frames["import"], text="新视频")
-        notebook.add(tab_frames["manage"], text="问题视频")
-        notebook.add(tab_frames["movie_info"], text="影视资讯")
-        notebook.add(tab_frames["settings"], text="设置")
+        tab_import_label = self._maintain_tab_labels["import"]
+        tab_manage_label = self._maintain_tab_labels["manage"]
+        tab_movie_info_label = self._maintain_tab_labels["movie_info"]
+        tab_settings_label = self._maintain_tab_labels["settings"]
+
+        notebook.add(tab_frames["import"], text=tab_import_label)
+        notebook.add(tab_frames["manage"], text=tab_manage_label)
+        notebook.add(tab_frames["movie_info"], text=tab_movie_info_label)
+        notebook.add(tab_frames["settings"], text=tab_settings_label)
 
         self._maintain_notebook = notebook
         self._maintain_settings_tab_id = str(tab_frames["settings"])
         self._maintain_tab_frames = {
-            "新视频": tab_frames["import"],
-            "问题视频": tab_frames["manage"],
-            "影视资讯": tab_frames["movie_info"],
-            "设置": tab_frames["settings"],
+            tab_import_label: tab_frames["import"],
+            tab_manage_label: tab_frames["manage"],
+            tab_movie_info_label: tab_frames["movie_info"],
+            tab_settings_label: tab_frames["settings"],
         }
         self._maintain_tab_probes = {}
         for tab_text, frame in self._maintain_tab_frames.items():
@@ -785,7 +863,7 @@ class XJJDesktopApp:
         self._maintain_tab_loading_overlays = {}
         for tab_text, frame in self._maintain_tab_frames.items():
             overlay = tk.Frame(frame, bg=self.colors["bg"])
-            label = tk.Label(overlay, text="加载中...", bg=self.colors["bg"], fg=self.colors["gray700"], font=("Helvetica", 14))
+            label = tk.Label(overlay, text=self.t("maintain.loading"), bg=self.colors["bg"], fg=self.colors["gray700"], font=("Helvetica", 14))
             label.place(relx=0.5, rely=0.5, anchor="center")
             overlay.place_forget()
             self._maintain_tab_loading_overlays[tab_text] = overlay
@@ -797,10 +875,10 @@ class XJJDesktopApp:
             elapsed_ms = (time.perf_counter() - start_time) * 1000
             self._trace_record("tab_init", elapsed_ms, f"tab={tab_name}")
 
-        time_init("新视频", self._init_maintain_import, tab_frames["import"])
-        time_init("问题视频", self._init_maintain_manage, tab_frames["manage"])
-        time_init("影视资讯", self._init_maintain_movie_info, tab_frames["movie_info"])
-        time_init("设置", self._init_maintain_settings, tab_frames["settings"])
+        time_init(tab_import_label, self._init_maintain_import, tab_frames["import"])
+        time_init(tab_manage_label, self._init_maintain_manage, tab_frames["manage"])
+        time_init(tab_movie_info_label, self._init_maintain_movie_info, tab_frames["movie_info"])
+        time_init(tab_settings_label, self._init_maintain_settings, tab_frames["settings"])
 
         def on_tab_changed(_event):
             start_time = time.perf_counter()
@@ -829,7 +907,7 @@ class XJJDesktopApp:
             self.root.after_idle(lambda t=tab_text: self._force_tab_redraw(t))
             self._show_tab_loading(tab_text)
             self._schedule_tab_loading_hide(tab_text)
-            if tab_text == "设置":
+            if tab_text == tab_settings_label:
                 update = getattr(self, "_settings_update_scroll", None)
                 if update is not None:
                     self._settings_scroll_dirty = True
@@ -850,15 +928,15 @@ class XJJDesktopApp:
         notebook.bind("<<NotebookTabChanged>>", on_tab_changed)
         if self._trace_tab_map:
             frame_map = {
-                tab_frames["import"]: "新视频",
-                tab_frames["manage"]: "问题视频",
-                tab_frames["movie_info"]: "影视资讯",
-                tab_frames["settings"]: "设置",
+                tab_frames["import"]: tab_import_label,
+                tab_frames["manage"]: tab_manage_label,
+                tab_frames["movie_info"]: tab_movie_info_label,
+                tab_frames["settings"]: tab_settings_label,
             }
             expose_widgets = dict(frame_map)
             settings_canvas = getattr(self, "_settings_canvas", None)
             if settings_canvas is not None:
-                expose_widgets[settings_canvas] = "设置"
+                expose_widgets[settings_canvas] = tab_settings_label
             for tab_text, probe in self._maintain_tab_probes.items():
                 expose_widgets[probe] = tab_text
 
@@ -1014,7 +1092,7 @@ class XJJDesktopApp:
         self.root.update_idletasks()
         elapsed_ms = (time.perf_counter() - start_time) * 1000
         self._trace_record("update_idletasks", elapsed_ms, f"tab={tab_text}")
-        if tab_text == "设置":
+        if tab_text == self._maintain_tab_labels["settings"]:
             canvas = getattr(self, "_settings_canvas", None)
             if canvas is not None:
                 start_bbox = time.perf_counter()
@@ -1089,7 +1167,7 @@ class XJJDesktopApp:
             self._tab_render_complete = True
             self._auto_switch_waiting = False
             self._trace_record("tab_render_ready", elapsed_ms, f"tab={tab_text} size={size}")
-            if tab_text == "设置":
+            if tab_text == self._maintain_tab_labels["settings"]:
                 canvas = getattr(self, "_settings_canvas", None)
                 if canvas is not None:
                     bbox = canvas.bbox("all")
@@ -1224,7 +1302,7 @@ class XJJDesktopApp:
 
     def _init_maintain_movie_info(self, parent):
         if not MovieDataCaptureService:
-            tk.Label(parent, text="影视讯息服务不可用 (MovieDataCaptureService 未找到)", bg=self.colors["bg"], fg="red").pack(pady=20)
+            tk.Label(parent, text=self.t("movie_info.unavailable"), bg=self.colors["bg"], fg="red").pack(pady=20)
             return
 
         tk.Frame(parent, bg=self.colors["bg"], height=12).pack(fill=tk.X)
@@ -1232,20 +1310,21 @@ class XJJDesktopApp:
         form.pack(fill=tk.X, pady=10)
 
         # Search input
+        self.movie_info_placeholder = self.t("movie_info.placeholder")
         self.movie_info_keyword = tk.StringVar()
         entry = tk.Entry(form, textvariable=self.movie_info_keyword, width=40, fg="gray", font=("Helvetica", 14))
-        entry.insert(0, "女艺人/视频号")
+        entry.insert(0, self.movie_info_placeholder)
         entry.pack(side=tk.LEFT, padx=8, ipady=5)
         self._attach_entry_context_menu(entry)
 
         def on_entry_focus_in(event):
-            if self.movie_info_keyword.get() == "女艺人/视频号":
+            if self.movie_info_keyword.get() == self.movie_info_placeholder:
                 entry.delete(0, tk.END)
                 entry.config(fg="black")
         
         def on_entry_focus_out(event):
             if not self.movie_info_keyword.get().strip():
-                entry.insert(0, "女艺人/视频号")
+                entry.insert(0, self.movie_info_placeholder)
                 entry.config(fg="gray")
 
         entry.bind("<FocusIn>", on_entry_focus_in)
@@ -1254,9 +1333,9 @@ class XJJDesktopApp:
         # Search buttons
         def do_search(silent=False):
             keyword = self.movie_info_keyword.get().strip()
-            if not keyword or keyword == "女艺人/视频号":
+            if not keyword or keyword == self.movie_info_placeholder:
                 if not silent:
-                    messagebox.showwarning("提示", "请输入查询关键字")
+                    messagebox.showwarning(self.t("message.title.tip"), self.t("movie_info.input_required"))
                 return
 
             # Run in thread to avoid blocking UI
@@ -1268,7 +1347,7 @@ class XJJDesktopApp:
                     # Update UI in main thread
                     self.root.after(0, lambda: render_results(rows))
                 except Exception as e:
-                    self.root.after(0, lambda: messagebox.showerror("错误", str(e)))
+                    self.root.after(0, lambda: messagebox.showerror(self.t("message.title.error"), str(e)))
                 finally:
                     svc.close()
             
@@ -1285,19 +1364,20 @@ class XJJDesktopApp:
         entry.bind("<KeyRelease>", on_key_release)
         entry.bind("<Return>", lambda e: do_search(silent=False))
 
-        self._make_action_button(form, text="搜索", command=lambda: do_search(silent=False)).pack(side=tk.LEFT, padx=4)
+        self._make_action_button(form, text=self.t("movie_info.search_button"), command=lambda: do_search(silent=False)).pack(side=tk.LEFT, padx=4)
         
         right_actions = tk.Frame(form, bg=self.colors["bg"])
         right_actions.pack(side=tk.RIGHT, padx=8)
 
         def do_import():
             file_path = filedialog.askopenfilename(
-                filetypes=[("Movie Info Files", "*.txt *.csv"), ("All Files", "*.*")]
+                title=self.t("movie_info.import_title"),
+                filetypes=[(self.t("movie_info.filetype_label"), "*.txt *.csv"), (self.t("filetype.all"), "*.*")]
             )
             if not file_path:
                 return
             dialog = tk.Toplevel(self.root)
-            dialog.title("请稍候")
+            dialog.title(self.t("dialog.wait"))
             dialog.geometry("280x120")
             dialog.update_idletasks()
             x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (dialog.winfo_width() // 2)
@@ -1306,7 +1386,7 @@ class XJJDesktopApp:
             dialog.transient(self.root)
             dialog.grab_set()
             dialog.protocol("WM_DELETE_WINDOW", lambda: None)
-            tk.Label(dialog, text="正在导入...", font=("Helvetica", 12)).pack(pady=30)
+            tk.Label(dialog, text=self.t("movie_info.importing"), font=("Helvetica", 12)).pack(pady=30)
 
             import threading
             def worker():
@@ -1323,18 +1403,18 @@ class XJJDesktopApp:
                 def on_finish():
                     dialog.destroy()
                     if error:
-                        messagebox.showerror("导入失败", str(error))
+                        messagebox.showerror(self.t("movie_info.import_failed_title"), str(error))
                         return
                     total = result.get("total", 0)
                     imported = result.get("imported", 0)
                     skipped = result.get("skipped", 0)
                     invalid_date = result.get("invalid_date", 0)
                     messagebox.showinfo(
-                        "导入完成",
-                        f"总行数: {total}\n成功导入: {imported}\n跳过: {skipped}\n日期格式错误: {invalid_date}",
+                        self.t("movie_info.import_done_title"),
+                        self.t("movie_info.import_done_summary", total=total, imported=imported, skipped=skipped, invalid_date=invalid_date),
                     )
                     keyword = self.movie_info_keyword.get().strip()
-                    if keyword and keyword != "女艺人/视频号":
+                    if keyword and keyword != self.movie_info_placeholder:
                         do_search(silent=True)
                 
                 self.root.after(0, on_finish)
@@ -1343,14 +1423,15 @@ class XJJDesktopApp:
 
         def do_export():
             file_path = filedialog.asksaveasfilename(
+                title=self.t("movie_info.export_title"),
                 defaultextension=".csv",
-                filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")],
+                filetypes=[(self.t("filetype.csv"), "*.csv"), (self.t("filetype.all"), "*.*")],
                 initialfile="movie_info_export.csv",
             )
             if not file_path:
                 return
             dialog = tk.Toplevel(self.root)
-            dialog.title("请稍候")
+            dialog.title(self.t("dialog.wait"))
             dialog.geometry("280x120")
             dialog.update_idletasks()
             x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (dialog.winfo_width() // 2)
@@ -1359,7 +1440,7 @@ class XJJDesktopApp:
             dialog.transient(self.root)
             dialog.grab_set()
             dialog.protocol("WM_DELETE_WINDOW", lambda: None)
-            tk.Label(dialog, text="正在导出...", font=("Helvetica", 12)).pack(pady=30)
+            tk.Label(dialog, text=self.t("movie_info.exporting"), font=("Helvetica", 12)).pack(pady=30)
 
             import threading
             def worker():
@@ -1376,17 +1457,17 @@ class XJJDesktopApp:
                 def on_finish():
                     dialog.destroy()
                     if error:
-                        messagebox.showerror("导出失败", str(error))
+                        messagebox.showerror(self.t("movie_info.export_failed_title"), str(error))
                         return
                     total = result.get("total", 0)
-                    messagebox.showinfo("导出完成", f"导出条数: {total}")
+                    messagebox.showinfo(self.t("movie_info.export_done_title"), self.t("movie_info.export_done_summary", total=total))
                 
                 self.root.after(0, on_finish)
 
             threading.Thread(target=worker, daemon=True).start()
 
-        self._make_action_button(right_actions, text="导入", command=do_import).pack(side=tk.LEFT, padx=4)
-        self._make_action_button(right_actions, text="导出", command=do_export).pack(side=tk.LEFT, padx=4)
+        self._make_action_button(right_actions, text=self.t("movie_info.import_button"), command=do_import).pack(side=tk.LEFT, padx=4)
+        self._make_action_button(right_actions, text=self.t("movie_info.export_button"), command=do_export).pack(side=tk.LEFT, padx=4)
 
         # Results table
         table_container = tk.Frame(parent, bg=self.colors["bg"])
@@ -1395,10 +1476,10 @@ class XJJDesktopApp:
         columns = ("actress_name", "video_code", "title", "release_date")
         table = ttk.Treeview(table_container, columns=columns, show="headings")
         
-        table.heading("actress_name", text="女艺人", anchor="w")
-        table.heading("video_code", text="视频号", anchor="w")
-        table.heading("title", text="标题", anchor="w")
-        table.heading("release_date", text="发布日期", anchor="w")
+        table.heading("actress_name", text=self.t("movie_info.table.actress_name"), anchor="w")
+        table.heading("video_code", text=self.t("movie_info.table.video_code"), anchor="w")
+        table.heading("title", text=self.t("movie_info.table.title"), anchor="w")
+        table.heading("release_date", text=self.t("movie_info.table.release_date"), anchor="w")
 
         table.column("actress_name", width=150)
         table.column("video_code", width=150)
@@ -1432,7 +1513,7 @@ class XJJDesktopApp:
         form = tk.Frame(parent, bg=self.colors["bg"])
         form.pack(fill=tk.X, pady=10)
 
-        tk.Label(form, text="扫描路径", bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 12)).pack(side=tk.LEFT)
+        tk.Label(form, text=self.t("maintain.scan_path"), bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 12)).pack(side=tk.LEFT)
         self.scan_dir_var = tk.StringVar()
         entry = tk.Entry(form, textvariable=self.scan_dir_var, width=50, font=("Helvetica", 14))
         entry.pack(side=tk.LEFT, padx=8, ipady=5)
@@ -1446,7 +1527,7 @@ class XJJDesktopApp:
                 self.scan_dir_var.set(d)
                 self._last_scan_dir = d
 
-        self._make_action_button(form, text="选择目录", command=choose_dir).pack(side=tk.LEFT, padx=8)
+        self._make_action_button(form, text=self.t("maintain.choose_dir"), command=choose_dir).pack(side=tk.LEFT, padx=8)
 
         status = tk.Label(parent, text="", bg=self.colors["bg"], fg=self.colors["gray700"])
         status.pack(fill=tk.X, pady=6)
@@ -1477,11 +1558,11 @@ class XJJDesktopApp:
             import threading
             path = self.scan_dir_var.get().strip()
             if not path:
-                messagebox.showwarning("提示", "请先选择扫描路径")
+                messagebox.showwarning(self.t("message.title.tip"), self.t("maintain.select_path_warning"))
                 return
             
             log_text.delete("1.0", tk.END)
-            status.configure(text=f"准备文件名调整: {path}")
+            status.configure(text=self.t("maintain.status.prepare_adjust", path=path))
             pb.pack(anchor="w", pady=4)
             pb.configure(value=0)
 
@@ -1492,7 +1573,7 @@ class XJJDesktopApp:
                     def update_ui():
                         pb.configure(value=progress)
                         append_log(message)
-                        status.configure(text=f"正在调整... {current}/{total}")
+                        status.configure(text=self.t("maintain.status.adjusting", current=current, total=total))
                     
                     self.root.after(0, update_ui)
                     time.sleep(0.1)  # 模拟逐行打印效果
@@ -1510,7 +1591,7 @@ class XJJDesktopApp:
                     # 不再重复追加所有日志，因为回调里已经打印了
                     # for line in final_log_lines:
                     #     append_log(line)
-                    status.configure(text="文件名调整完成")
+                    status.configure(text=self.t("maintain.status.adjust_done"))
                 
                 self.root.after(0, finish)
             threading.Thread(target=worker, daemon=True).start()
@@ -1520,11 +1601,11 @@ class XJJDesktopApp:
             import threading
             path = self.scan_dir_var.get().strip()
             if not path:
-                messagebox.showwarning("提示", "请先选择扫描路径")
+                messagebox.showwarning(self.t("message.title.tip"), self.t("maintain.select_path_warning"))
                 return
 
             log_text.delete("1.0", tk.END)
-            status.configure(text=f"准备扫描: {path}")
+            status.configure(text=self.t("maintain.status.prepare_scan", path=path))
             pb.pack(anchor="w", pady=4)
             pb.configure(value=0)
 
@@ -1560,16 +1641,16 @@ class XJJDesktopApp:
                 def finish():
                     pb.pack_forget()
                     if error:
-                        messagebox.showerror("系统错误", f"执行维护时发生未捕获异常:\n{error}")
-                        status.configure(text=f"系统错误: {error}")
+                        messagebox.showerror(self.t("message.title.system_error"), self.t("maintain.error.unhandled", error=error))
+                        status.configure(text=self.t("maintain.status.system_error", error=error))
                         return
 
                     if result and result.get("success"):
-                        status.configure(text=f"维护完成: 处理 {result.get('processed_count')} 个文件")
+                        status.configure(text=self.t("maintain.status.completed", count=result.get("processed_count")))
                     else:
-                        msg = result.get("message") if result else "未知错误"
-                        messagebox.showerror("失败", msg)
-                        status.configure(text=f"失败: {msg}")
+                        msg = result.get("message") if result else self.t("maintain.error.unknown")
+                        messagebox.showerror(self.t("message.title.failed"), msg)
+                        status.configure(text=self.t("maintain.status.failed", message=msg))
 
                 self.root.after(0, finish)
 
@@ -1577,8 +1658,8 @@ class XJJDesktopApp:
 
         btn_row = tk.Frame(parent, bg=self.colors["bg"])
         btn_row.pack(anchor="w", pady=4)
-        self._make_action_button(btn_row, text="文件名调整", command=do_filename_adjustment).pack(side=tk.LEFT, padx=6)
-        self._make_action_button(btn_row, text="录入仓库", command=do_maintain).pack(side=tk.LEFT, padx=6)
+        self._make_action_button(btn_row, text=self.t("maintain.filename_adjust"), command=do_filename_adjustment).pack(side=tk.LEFT, padx=6)
+        self._make_action_button(btn_row, text=self.t("maintain.ingest"), command=do_maintain).pack(side=tk.LEFT, padx=6)
 
     def _init_maintain_settings(self, parent):
         tk.Frame(parent, bg=self.colors["bg"], height=12).pack(fill=tk.X)
@@ -1627,42 +1708,48 @@ class XJJDesktopApp:
         
         # Title Setting
         # 加大字体
-        tk.Label(form, text="应用程序标题", bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 14, "bold")).pack(anchor="w", padx=20, pady=(0, 8))
+        tk.Label(form, text=self.t("settings.app_title"), bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 14, "bold")).pack(anchor="w", padx=20, pady=(0, 8))
         
         self.settings_title_var = tk.StringVar(value=self.settings.app_title)
         title_entry = tk.Entry(form, textvariable=self.settings_title_var, width=50, font=("Helvetica", 14))
         title_entry.pack(anchor="w", padx=20, pady=(0, 15), ipady=5)
         self._attach_entry_context_menu(title_entry)
+
+        tk.Label(form, text=self.t("settings.language"), bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 14, "bold")).pack(anchor="w", padx=20, pady=(0, 8))
+        self.settings_language_var = tk.StringVar(value=self._language_labels.get(self.settings.language, self._language_labels["zh_CN"]))
+        language_cb = ttk.Combobox(form, textvariable=self.settings_language_var, width=16, state="readonly", font=("Helvetica", 12))
+        language_cb["values"] = tuple(self._language_labels.values())
+        language_cb.pack(anchor="w", padx=20, pady=(0, 15), ipady=3)
         
         # Page Size Setting
         tk.Frame(form, height=1, bg=self.colors["gray200"]).pack(fill=tk.X, padx=20, pady=15)
-        tk.Label(form, text="查询页设置", bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 14, "bold")).pack(anchor="w", padx=20, pady=(0, 8))
+        tk.Label(form, text=self.t("settings.query_section"), bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 14, "bold")).pack(anchor="w", padx=20, pady=(0, 8))
         
         size_frame = tk.Frame(form, bg=self.colors["bg"])
         size_frame.pack(anchor="w", padx=20)
-        tk.Label(size_frame, text="每页显示条数:", bg=self.colors["bg"], font=("Helvetica", 12)).pack(side=tk.LEFT)
+        tk.Label(size_frame, text=self.t("settings.page_size"), bg=self.colors["bg"], font=("Helvetica", 12)).pack(side=tk.LEFT)
         self.settings_page_size_var = tk.IntVar(value=self.settings.page_size)
         size_entry = tk.Entry(size_frame, textvariable=self.settings_page_size_var, width=10, font=("Helvetica", 12))
         size_entry.pack(side=tk.LEFT, padx=10, ipady=3)
         self._attach_entry_context_menu(size_entry)
         
         # Column Visibility Setting
-        tk.Label(form, text="显示列配置:", bg=self.colors["bg"], font=("Helvetica", 12)).pack(anchor="w", padx=20, pady=(15, 8))
+        tk.Label(form, text=self.t("settings.visible_columns"), bg=self.colors["bg"], font=("Helvetica", 12)).pack(anchor="w", padx=20, pady=(15, 8))
         
         cols_frame = tk.Frame(form, bg=self.colors["bg"])
         cols_frame.pack(anchor="w", padx=20)
         
         # Full list of available columns (key, label)
         available_columns = [
-            ("video", "视频"),
-            ("actress", "女艺人"),
-            ("tags", "标签"),
-            ("file_path", "路径"),
-            ("file_size", "大小"),
-            ("duration", "时长"),
-            ("resolution", "分辨率"),
-            ("updated_time", "更新时间"),
-            ("preference", "偏好")
+            ("video", self._column_labels["video"]),
+            ("actress", self._column_labels["actress"]),
+            ("tags", self._column_labels["tags"]),
+            ("file_path", self._column_labels["file_path"]),
+            ("file_size", self._column_labels["file_size"]),
+            ("duration", self._column_labels["duration"]),
+            ("resolution", self._column_labels["resolution"]),
+            ("updated_time", self._column_labels["updated_time"]),
+            ("preference", self._column_labels["preference"])
         ]
         
         self.column_vars = {}
@@ -1688,18 +1775,18 @@ class XJJDesktopApp:
         # Tags Management Section
         tk.Frame(form, height=1, bg=self.colors["gray200"]).pack(fill=tk.X, padx=20, pady=15)
         
-        tk.Label(form, text="标签管理", bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 14, "bold")).pack(anchor="w", padx=20, pady=(0, 8))
+        tk.Label(form, text=self.t("settings.tags_section"), bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 14, "bold")).pack(anchor="w", padx=20, pady=(0, 8))
         
         tags_frame = tk.Frame(form, bg=self.colors["bg"])
         tags_frame.pack(fill=tk.X, padx=20)
         
         # Tags List (Combobox as requested)
-        tk.Label(tags_frame, text="选择标签:", bg=self.colors["bg"]).grid(row=0, column=0, sticky="w", pady=5)
+        tk.Label(tags_frame, text=self.t("settings.tags_select"), bg=self.colors["bg"]).grid(row=0, column=0, sticky="w", pady=5)
         self.tags_cb = ttk.Combobox(tags_frame, width=40, state="readonly")
         self.tags_cb.grid(row=0, column=1, sticky="w", padx=10, pady=5)
         
         # Tag Name Entry
-        tk.Label(tags_frame, text="标签名称:", bg=self.colors["bg"]).grid(row=1, column=0, sticky="w", pady=5)
+        tk.Label(tags_frame, text=self.t("settings.tags_name"), bg=self.colors["bg"]).grid(row=1, column=0, sticky="w", pady=5)
         self.tag_name_var = tk.StringVar()
         tag_entry = tk.Entry(tags_frame, textvariable=self.tag_name_var, width=42, font=("Helvetica", 14))
         tag_entry.grid(row=1, column=1, sticky="w", padx=10, pady=5, ipady=5)
@@ -1736,10 +1823,10 @@ class XJJDesktopApp:
         def add_tag():
             val = self.tag_name_var.get().strip()
             if not val:
-                messagebox.showwarning("提示", "标签名称不能为空")
+                messagebox.showwarning(self.t("message.title.tip"), self.t("settings.tags_name_required"))
                 return
             if val in self._current_tags:
-                messagebox.showwarning("提示", "标签已存在")
+                messagebox.showwarning(self.t("message.title.tip"), self.t("settings.tags_exists"))
                 return
             self._current_tags.append(val)
             refresh_tags_ui(select_val=val)
@@ -1750,10 +1837,10 @@ class XJJDesktopApp:
             if not old_val:
                 return
             if not new_val:
-                messagebox.showwarning("提示", "标签名称不能为空")
+                messagebox.showwarning(self.t("message.title.tip"), self.t("settings.tags_name_required"))
                 return
             if new_val != old_val and new_val in self._current_tags:
-                messagebox.showwarning("提示", "目标标签名已存在")
+                messagebox.showwarning(self.t("message.title.tip"), self.t("settings.tags_target_exists"))
                 return
                 
             idx = self._current_tags.index(old_val)
@@ -1766,14 +1853,15 @@ class XJJDesktopApp:
                 self._current_tags.remove(val)
                 refresh_tags_ui(select_val=None)
 
-        self._make_action_button(btn_frame, text="新增", command=add_tag).pack(side=tk.LEFT, padx=(0, 5))
-        self._make_action_button(btn_frame, text="更新", command=update_tag).pack(side=tk.LEFT, padx=5)
-        self._make_action_button(btn_frame, text="删除", command=delete_tag).pack(side=tk.LEFT, padx=5)
+        self._make_action_button(btn_frame, text=self.t("settings.tags_add"), command=add_tag).pack(side=tk.LEFT, padx=(0, 5))
+        self._make_action_button(btn_frame, text=self.t("settings.tags_update"), command=update_tag).pack(side=tk.LEFT, padx=5)
+        self._make_action_button(btn_frame, text=self.t("settings.tags_delete"), command=delete_tag).pack(side=tk.LEFT, padx=5)
 
         # Save Settings Logic
         tk.Frame(form, height=1, bg=self.colors["gray200"]).pack(fill=tk.X, padx=20, pady=20)
         
-        self.btn_save_settings = self._make_action_button(form, text="保存设置", font=("Helvetica", 12), padx=20, pady=8)
+        save_label = self.t("settings.save_button")
+        self.btn_save_settings = self._make_action_button(form, text=save_label, font=("Helvetica", 12), padx=20, pady=8)
         self.btn_save_settings.pack(anchor="w", padx=20)
         
         def check_changes(*args):
@@ -1782,6 +1870,10 @@ class XJJDesktopApp:
             
             # Tags
             tags_changed = set(self._current_tags) != set(self.settings.tags)
+
+            # Language
+            current_language = self._language_label_to_value.get(self.settings_language_var.get(), "zh_CN")
+            language_changed = current_language != self.settings.language
             
             # Page Size
             try:
@@ -1803,13 +1895,14 @@ class XJJDesktopApp:
             
             cols_changed = current_cols != self.settings.visible_columns
             
-            if title_changed or tags_changed or size_changed or cols_changed:
-                self.btn_save_settings.configure(fg="blue", text="保存设置*")
+            if title_changed or tags_changed or size_changed or cols_changed or language_changed:
+                self.btn_save_settings.configure(fg="blue", text=f"{save_label}*")
             else:
-                self.btn_save_settings.configure(fg="black", text="保存设置")
+                self.btn_save_settings.configure(fg="black", text=save_label)
         
         self.settings_title_var.trace("w", check_changes)
         self.settings_page_size_var.trace("w", check_changes)
+        self.settings_language_var.trace("w", check_changes)
         for var in self.column_vars.values():
             var.trace("w", check_changes)
             
@@ -1821,17 +1914,18 @@ class XJJDesktopApp:
         def save_settings():
             new_title = self.settings_title_var.get().strip()
             new_page_size = self.settings_page_size_var.get()
+            new_language = self._language_label_to_value.get(self.settings_language_var.get(), "zh_CN")
             
             if not new_title:
-                messagebox.showwarning("提示", "标题不能为空")
+                messagebox.showwarning(self.t("message.title.tip"), self.t("settings.title_required"))
                 return
                 
             try:
                 if new_page_size < 1:
-                    messagebox.showwarning("提示", "每页显示条数必须大于0")
+                    messagebox.showwarning(self.t("message.title.tip"), self.t("settings.page_size_gt_zero"))
                     return
             except Exception:
-                messagebox.showwarning("提示", "每页显示条数必须是数字")
+                messagebox.showwarning(self.t("message.title.tip"), self.t("settings.page_size_numeric"))
                 return
             
             # Save Title
@@ -1842,6 +1936,9 @@ class XJJDesktopApp:
                 
             # Save Page Size
             self.settings.page_size = new_page_size
+
+            previous_language = self.settings.language
+            self.settings.language = new_language
             
             # Save Visible Columns
             new_cols = []
@@ -1864,9 +1961,13 @@ class XJJDesktopApp:
             
             self.settings.save_settings()
             
-            check_changes() # Reset state
-            
-            # Trigger UI refresh for query page
+            language_changed = previous_language != new_language
+            if language_changed:
+                self._apply_language(new_language)
+                return
+
+            check_changes()
+
             if hasattr(self, "_refresh_query_page_columns"):
                 self._refresh_query_page_columns()
             
@@ -1891,17 +1992,7 @@ class XJJDesktopApp:
         table["columns"] = columns
         table["displaycolumns"] = columns # Ensure visibility
         
-        header_texts = {
-            "video": "视频",
-            "actress": "女艺人",
-            "tags": "标签",
-            "file_path": "路径",
-            "file_size": "大小",
-            "duration": "时长",
-            "resolution": "分辨率",
-            "updated_time": "更新时间",
-            "preference": "偏好"
-        }
+        header_texts = dict(self._column_labels)
         
         left_cols = {"video", "actress", "tags", "file_path", "preference"}
         
@@ -1920,6 +2011,30 @@ class XJJDesktopApp:
         if hasattr(self.pages["query"], "refresh_data"):
             self.pages["query"].refresh_data()
 
+    def _rebuild_ui(self) -> None:
+        current_page = getattr(self, "current_page", "query")
+        for child in self.root.winfo_children():
+            child.destroy()
+        self._init_styles()
+        self._build_layout()
+        self.pages = {}
+        self._init_pages()
+        if current_page not in self.pages:
+            current_page = "query"
+        self.current_page = current_page
+        self.root.title(self.settings.app_title or self.t("app.title"))
+        self._update_sidebar_selection()
+        self.show_page(self.current_page)
+
+    def _apply_language(self, language: str) -> None:
+        target = language or self.i18n.fallback
+        self.i18n.language = target
+        self.i18n._load_language(target)
+        if self.i18n.fallback != target:
+            self.i18n._load_language(self.i18n.fallback)
+        self._init_i18n_labels()
+        self._rebuild_ui()
+
     def _init_maintain_manage(self, parent):
         tk.Frame(parent, bg=self.colors["bg"], height=12).pack(fill=tk.X)
         tools_section = tk.Frame(parent, bg=self.colors["bg"])
@@ -1936,12 +2051,12 @@ class XJJDesktopApp:
         table = ttk.Treeview(table_container, columns=columns, show="headings")
         
         header_texts = {
-            "video": "视频",
-            "file_path": "路径",
-            "file_size": "大小",
-            "duration": "时长",
-            "resolution": "分辨率",
-            "updated_time": "更新时间"
+            "video": self._column_labels["video"],
+            "file_path": self._column_labels["file_path"],
+            "file_size": self._column_labels["file_size"],
+            "duration": self._column_labels["duration"],
+            "resolution": self._column_labels["resolution"],
+            "updated_time": self._column_labels["updated_time"]
         }
         
         for col in columns:
@@ -1967,13 +2082,13 @@ class XJJDesktopApp:
             table.bind(sequence, lambda e: self._on_table_right_click(table, e))
 
         # 损坏视频按钮
-        btn_broken = self._make_action_button(tools_row, text="损坏视频")
+        btn_broken = self._make_action_button(tools_row, text=self.t("maintain.broken_button"))
         
         def show_broken_videos():
             import threading, queue
             q = queue.Queue()
             orig = btn_broken.cget("text")
-            btn_broken.configure(state=tk.DISABLED, text="加载中...")
+            btn_broken.configure(state=tk.DISABLED, text=self.t("button.loading"))
             
             # 清空表格
             self._render_table(table, [])
@@ -2005,13 +2120,13 @@ class XJJDesktopApp:
         btn_broken.pack(side=tk.LEFT, padx=6)
 
         # 重复视频按钮
-        btn_dup = self._make_action_button(tools_row, text="重复视频")
+        btn_dup = self._make_action_button(tools_row, text=self.t("maintain.duplicate_button"))
         
         def show_duplicate_videos():
             import threading, queue
             q = queue.Queue()
             orig = btn_dup.cget("text")
-            btn_dup.configure(state=tk.DISABLED, text="加载中...")
+            btn_dup.configure(state=tk.DISABLED, text=self.t("button.loading"))
             
             # 清空表格
             self._render_table(table, [])
@@ -2053,7 +2168,7 @@ class XJJDesktopApp:
             except Exception:
                 columns = ["video"]
             empty_values = [""] * len(columns)
-            empty_values[0] = "暂无数据"
+            empty_values[0] = self.t("table.empty")
             table.insert("", tk.END, values=empty_values)
             table._row_cache = {}
             return
@@ -2091,7 +2206,7 @@ class XJJDesktopApp:
                             val = str(val)
                     values.append(str(val) if val else "")
                 elif col == "preference":
-                    values.append("喜欢" if pref_status == "like" else "不喜欢" if pref_status == "dislike" else "已删除" if pref_status == "deleted" else "")
+                    values.append(self._preference_labels["like"] if pref_status == "like" else self._preference_labels["dislike"] if pref_status == "dislike" else self._preference_labels["deleted"] if pref_status == "deleted" else "")
                 else: values.append(str(r.get(col, "")))
             
             tags = ()
@@ -2207,7 +2322,7 @@ class XJJDesktopApp:
                     else:
                         self._play_video(file_path)
                 else:
-                    messagebox.showerror("文件不存在", f"无法访问视频文件：\n{file_path}\n\n该文件可能已被移动、删除或所在的驱动器未连接。")
+                    messagebox.showerror(self.t("message.title.file_missing"), self.t("message.file_missing", path=file_path))
         finally:
             # 500ms 后重置点击状态
             self.root.after(500, lambda: setattr(self, "_processing_click", False))
@@ -2224,7 +2339,7 @@ class XJJDesktopApp:
             elif sys.platform == "darwin": os.system(f"open '{path_str}'")
             else: os.system(f"xdg-open '{path_str}'")
         except Exception as e:
-            messagebox.showerror("打开目录失败", str(e))
+            messagebox.showerror(self.t("message.title.open_dir_failed"), str(e))
 
     def _on_table_right_click(self, table: ttk.Treeview, event: tk.Event):
         item = table.identify_row(event.y)
@@ -2243,25 +2358,25 @@ class XJJDesktopApp:
         
         if role.startswith("maintain"):
             if video_id:
-                menu.add_command(label="删除记录...", command=lambda: self._confirm_and_delete(table, item, int(video_id), video_label))
+                menu.add_command(label=self.t("context.delete_record"), command=lambda: self._confirm_and_delete(table, item, int(video_id), video_label))
             else:
-                menu.add_command(label="删除记录...", state=tk.DISABLED)
+                menu.add_command(label=self.t("context.delete_record"), state=tk.DISABLED)
         else:
             if video_code:
                 actress_label = row.get("actress") or ""
-                menu.add_command(label="编辑女艺人...", command=lambda: self._open_actress_manager(table, item, video_code, actress_label))
+                menu.add_command(label=self.t("context.edit_actress"), command=lambda: self._open_actress_manager(table, item, video_code, actress_label))
             else:
-                menu.add_command(label="编辑女艺人...", state=tk.DISABLED)
+                menu.add_command(label=self.t("context.edit_actress"), state=tk.DISABLED)
             
             if video_id:
                 tags_label = row.get("tags") or ""
-                menu.add_command(label="编辑标签...", command=lambda: self._open_tags_manager(table, item, video_id, tags_label))
+                menu.add_command(label=self.t("context.edit_tags"), command=lambda: self._open_tags_manager(table, item, video_id, tags_label))
                 menu.add_separator()
             
-            menu.add_command(label="标记为喜欢", command=lambda: self._set_row_preference(table, item, video_label, "like"))
-            menu.add_command(label="标记为不喜欢", command=lambda: self._set_row_preference(table, item, video_label, "dislike"))
-            menu.add_command(label="标记为已删除", command=lambda: self._set_row_preference(table, item, video_label, "deleted"))
-            menu.add_command(label="清除偏好", command=lambda: self._set_row_preference(table, item, video_label, None))
+            menu.add_command(label=self.t("context.mark_like"), command=lambda: self._set_row_preference(table, item, video_label, "like"))
+            menu.add_command(label=self.t("context.mark_dislike"), command=lambda: self._set_row_preference(table, item, video_label, "dislike"))
+            menu.add_command(label=self.t("context.mark_deleted"), command=lambda: self._set_row_preference(table, item, video_label, "deleted"))
+            menu.add_command(label=self.t("context.clear_preference"), command=lambda: self._set_row_preference(table, item, video_label, None))
             menu.add_separator()
             
             players = self._get_system_video_players()
@@ -2276,7 +2391,7 @@ class XJJDesktopApp:
     def _confirm_and_delete(self, table: ttk.Treeview, item_id: str, video_id: int, video_label: str) -> None:
         dialog = tk.Toplevel(self.root)
         dialog.withdraw()
-        dialog.title("确认删除")
+        dialog.title(self.t("dialog.confirm_delete_title"))
         dialog.geometry("420x180")
         dialog.transient(self.root)
         dialog.grab_set()
@@ -2291,12 +2406,12 @@ class XJJDesktopApp:
         container = tk.Frame(dialog, bg=self.colors["bg"], padx=16, pady=16)
         container.pack(fill=tk.BOTH, expand=True)
         
-        title = tk.Label(container, text="删除记录确认", bg=self.colors["bg"], fg=self.colors["brand"], font=("Helvetica", 16, "bold"))
+        title = tk.Label(container, text=self.t("dialog.confirm_delete_heading"), bg=self.colors["bg"], fg=self.colors["brand"], font=("Helvetica", 16, "bold"))
         title.pack(anchor="w")
         
         msg = tk.Label(
             container,
-            text=f"确认将删除 {video_label} 视频？",
+            text=self.t("dialog.confirm_delete_message", video=video_label),
             bg=self.colors["bg"], fg=self.colors["gray800"], justify="left", wraplength=380
         )
         msg.pack(anchor="w", pady=(8, 12))
@@ -2312,9 +2427,9 @@ class XJJDesktopApp:
             result["confirm"] = True
             dialog.destroy()
         
-        cancel_btn = self._make_action_button(btns, text="取 消", command=do_cancel, padx=20, pady=8)
+        cancel_btn = self._make_action_button(btns, text=self.t("button.cancel"), command=do_cancel, padx=20, pady=8)
         cancel_btn.pack(side=tk.RIGHT, padx=6)
-        delete_btn = self._make_action_button(btns, text="删 除", command=do_delete, padx=20, pady=8)
+        delete_btn = self._make_action_button(btns, text=self.t("button.delete"), command=do_delete, padx=20, pady=8)
         delete_btn.configure(bg=self.colors["brand"], fg="black", activebackground=self.colors["brand"])
         delete_btn.pack(side=tk.RIGHT, padx=6)
         
@@ -2327,7 +2442,7 @@ class XJJDesktopApp:
             svc = VideoService()
             ok = svc.delete_video(video_id)
         except Exception as e:
-            messagebox.showerror("删除失败", str(e))
+            messagebox.showerror(self.t("message.title.delete_failed"), str(e))
             return
         
         if ok:
@@ -2335,13 +2450,13 @@ class XJJDesktopApp:
             table.delete(item_id)
             row_cache.pop(item_id, None)
         else:
-            messagebox.showwarning("未删除", "删除操作未成功")
+            messagebox.showwarning(self.t("message.title.not_deleted"), self.t("message.delete_not_success"))
 
     def _open_tags_manager(self, table: ttk.Treeview, item_id: str, video_id: int, current_tags_str: str) -> None:
         """打开标签管理对话框"""
         dialog = tk.Toplevel(self.root)
         dialog.withdraw()  # 先隐藏，避免闪烁
-        dialog.title("管理标签")
+        dialog.title(self.t("dialog.manage_tags_title"))
         dialog.geometry("400x500")
         
         # Center dialog
@@ -2366,7 +2481,7 @@ class XJJDesktopApp:
         add_frame = tk.Frame(container, bg=self.colors["bg"])
         add_frame.pack(fill=tk.X, pady=(0, 10))
         
-        tk.Label(add_frame, text="新增标签:", bg=self.colors["bg"]).pack(side=tk.LEFT)
+        tk.Label(add_frame, text=self.t("tags.add_label"), bg=self.colors["bg"]).pack(side=tk.LEFT)
         new_tag_var = tk.StringVar()
         entry = tk.Entry(add_frame, textvariable=new_tag_var)
         entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
@@ -2454,7 +2569,7 @@ class XJJDesktopApp:
             new_tag_var.set("")
             refresh_list()
             
-        self._make_action_button(add_frame, text="添加", command=add_new_tag).pack(side=tk.LEFT)
+        self._make_action_button(add_frame, text=self.t("button.add"), command=add_new_tag).pack(side=tk.LEFT)
         entry.bind("<Return>", lambda e: add_new_tag())
         
         # Buttons
@@ -2487,11 +2602,11 @@ class XJJDesktopApp:
                 
                 dialog.destroy()
             else:
-                messagebox.showerror("错误", "保存标签失败")
+                messagebox.showerror(self.t("message.title.error"), self.t("tags.save_failed"))
         
         # Changed button text color to black as requested
-        self._make_action_button(btn_frame, text="保存", command=save).pack(side=tk.RIGHT)
-        self._make_action_button(btn_frame, text="取消", command=dialog.destroy).pack(side=tk.RIGHT, padx=10)
+        self._make_action_button(btn_frame, text=self.t("button.save"), command=save).pack(side=tk.RIGHT)
+        self._make_action_button(btn_frame, text=self.t("button.cancel"), command=dialog.destroy).pack(side=tk.RIGHT, padx=10)
 
     def _set_row_preference(self, table: ttk.Treeview, item_id: str, video_code: str, status: str | None) -> None:
         try: set_video_preference(video_code, status)
@@ -2504,7 +2619,7 @@ class XJJDesktopApp:
         cols = list(table["columns"])
         if "preference" in cols:
             idx = cols.index("preference")
-            display = "喜欢" if status == "like" else "不喜欢" if status == "dislike" else "已删除" if status == "deleted" else ""
+            display = self._preference_labels["like"] if status == "like" else self._preference_labels["dislike"] if status == "dislike" else self._preference_labels["deleted"] if status == "deleted" else ""
             values[idx] = display
             table.item(item_id, values=values)
             
@@ -2515,11 +2630,11 @@ class XJJDesktopApp:
 
     def _open_actress_manager(self, table: ttk.Treeview, item_id: str, video_code: str, current_actress_str: str) -> None:
         if not video_code:
-            messagebox.showerror("无法编辑", "缺少视频号，无法更新女艺人。")
+            messagebox.showerror(self.t("message.title.cannot_edit"), self.t("actress.missing_video_code"))
             return
         dialog = tk.Toplevel(self.root)
         dialog.withdraw()
-        dialog.title("编辑女艺人")
+        dialog.title(self.t("dialog.edit_actress_title"))
         dialog.geometry("360x160")
         
         dialog.update_idletasks()
@@ -2535,7 +2650,7 @@ class XJJDesktopApp:
         container = tk.Frame(dialog, bg=self.colors["bg"], padx=15, pady=15)
         container.pack(fill=tk.BOTH, expand=True)
         
-        tk.Label(container, text="女艺人（用逗号分隔）:", bg=self.colors["bg"]).pack(anchor="w")
+        tk.Label(container, text=self.t("actress.input_label"), bg=self.colors["bg"]).pack(anchor="w")
         actress_var = tk.StringVar(value=current_actress_str or "")
         entry = tk.Entry(container, textvariable=actress_var, font=("Helvetica", 13))
         entry.pack(fill=tk.X, pady=8)
@@ -2551,12 +2666,12 @@ class XJJDesktopApp:
             if ok:
                 dialog.destroy()
             else:
-                messagebox.showerror("保存失败", "女艺人更新失败，请稍后重试。")
+                messagebox.showerror(self.t("message.title.save_failed"), self.t("actress.update_failed"))
         
-        btn_save = self._make_action_button(btn_frame, text="保存", padx=10, command=_on_save)
+        btn_save = self._make_action_button(btn_frame, text=self.t("button.save"), padx=10, command=_on_save)
         btn_save.pack(side=tk.RIGHT, padx=5)
         
-        btn_cancel = self._make_action_button(btn_frame, text="取消", padx=10, command=dialog.destroy)
+        btn_cancel = self._make_action_button(btn_frame, text=self.t("button.cancel"), padx=10, command=dialog.destroy)
         btn_cancel.pack(side=tk.RIGHT, padx=5)
 
     def _set_row_actress(self, table: ttk.Treeview, item_id: str, video_code: str, actress_names: list[str]) -> bool:
@@ -2589,9 +2704,9 @@ class XJJDesktopApp:
         container.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
         
         table = ttk.Treeview(container, columns=("video", "file_size", "path"), show="headings")
-        table.heading("video", text="视频")
-        table.heading("file_size", text="大小")
-        table.heading("path", text="路径")
+        table.heading("video", text=self._column_labels["video"])
+        table.heading("file_size", text=self._column_labels["file_size"])
+        table.heading("path", text=self._column_labels["file_path"])
         table.column("video", width=200)
         table.column("file_size", width=100)
         table.column("path", width=400)
@@ -2608,7 +2723,7 @@ class XJJDesktopApp:
             elif sys.platform == "darwin": os.system(f"open '{video_path}'")
             else: os.system(f"xdg-open '{video_path}'")
         except Exception as e:
-            messagebox.showerror("播放失败", str(e))
+            messagebox.showerror(self.t("message.title.play_failed"), str(e))
 
     def _play_video_with_player(self, video_path: Path, player_path: str):
         try:
@@ -2616,10 +2731,10 @@ class XJJDesktopApp:
             elif sys.platform == "darwin": os.system(f'open -a "{player_path}" "{video_path}"')
             else: os.system(f'"{player_path}" "{video_path}"')
         except Exception as e:
-            messagebox.showerror("播放失败", str(e))
+            messagebox.showerror(self.t("message.title.play_failed"), str(e))
 
     def _get_system_video_players(self):
-        players = {"默认播放器": None}
+        players = {self.t("player.default"): None}
         
         if sys.platform == "darwin":
             # macOS 常见播放器路径检测

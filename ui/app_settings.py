@@ -8,7 +8,8 @@ class AppSettings:
         "app_title": "小姐姐の管家",
         "tags": [],
         "page_size": 20,
-        "visible_columns": ["video", "actress", "tags", "file_path", "file_size", "duration", "resolution", "updated_time", "preference"]
+        "visible_columns": ["video", "actress", "tags", "file_path", "file_size", "duration", "resolution", "updated_time", "preference"],
+        "language": "zh_CN"
     }
     
     SETTINGS_FILE = str(get_config_path("output/video_info_collector/settings.json", calling_file=__file__))
@@ -109,3 +110,14 @@ class AppSettings:
             if "video" not in value:
                 value.insert(0, "video")
             self._settings["visible_columns"] = list(value)
+
+    @property
+    def language(self):
+        return self._settings.get("language", "zh_CN")
+
+    @language.setter
+    def language(self, value):
+        if value in ("zh_CN", "zh_TW", "en_US", "ja_JP", "ko_KR", "th_TH"):
+            self._settings["language"] = value
+        else:
+            self._settings["language"] = "zh_CN"
