@@ -206,9 +206,13 @@ class TestSQLiteStorage(unittest.TestCase):
         """测试更新视频信息"""
         video_info = self.test_video_infos[0]
         video_id = self.storage.insert_video_info(video_info)
+        stored_before = self.storage.get_video_info_by_id(video_id)
         
         # 更新数据
         update_data = {
+            'file_path': f"{video_info.file_path}.moved",
+            'file_status': 'missing',
+            'logical_path': '/new/logical/path',
             'width': 3840,
             'height': 2160,
             'video_codec': 'h265'
@@ -219,9 +223,12 @@ class TestSQLiteStorage(unittest.TestCase):
         
         # 验证更新结果
         stored_info = self.storage.get_video_info_by_id(video_id)
-        self.assertEqual(stored_info['width'], 3840)
-        self.assertEqual(stored_info['height'], 2160)
-        self.assertEqual(stored_info['video_codec'], 'h265')
+        self.assertEqual(stored_info['file_path'], f"{video_info.file_path}.moved")
+        self.assertEqual(stored_info['file_status'], 'missing')
+        self.assertEqual(stored_info['logical_path'], '/new/logical/path')
+        self.assertEqual(stored_info['width'], stored_before['width'])
+        self.assertEqual(stored_info['height'], stored_before['height'])
+        self.assertEqual(stored_info['video_codec'], stored_before['video_codec'])
         
         # 更新不存在的记录
         success = self.storage.update_video_info(99999, update_data)

@@ -75,10 +75,10 @@ def main():
             video_id, video_code, file_path, file_status = row
             print(f"ID: {video_id}, Code: {video_code}, Path: {file_path}, Status: {file_status}")
         
-        # 检查REPLACED状态的视频
-        cursor.execute("SELECT COUNT(*) FROM video_info WHERE file_status = 'replaced'")
-        replaced_count = cursor.fetchone()[0]
-        print(f"\n被标记为REPLACED的视频数量: {replaced_count}")
+        # 检查DELETED状态的视频
+        cursor.execute("SELECT COUNT(*) FROM video_info WHERE file_status = 'deleted'")
+        deleted_count = cursor.fetchone()[0]
+        print(f"\n被标记为DELETED的视频数量: {deleted_count}")
         
         conn.close()
         

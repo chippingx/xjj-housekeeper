@@ -3,7 +3,7 @@
 测试三状态file_status系统
 
 测试覆盖：
-1. present/missing/ignore状态的正确设置
+1. present/missing/deleted状态的正确设置
 2. 状态转换逻辑
 3. 状态持久化和恢复
 4. 批量状态管理
@@ -63,7 +63,7 @@ class TestFileStatusBasics(unittest.TestCase):
         file_path = self._create_test_file("videos/ABC-123.mp4")
         video_info = VideoInfo(file_path)
         
-        valid_statuses = ['present', 'missing', 'ignore']
+        valid_statuses = ['present', 'missing', 'deleted']
         
         for status in valid_statuses:
             video_info.file_status = status
@@ -75,7 +75,7 @@ class TestFileStatusBasics(unittest.TestCase):
         file_path = self._create_test_file("videos/ABC-123.mp4")
         video_info = VideoInfo(file_path)
         
-        invalid_statuses = ['deleted', 'unknown', 'error', '', None, 123]
+        invalid_statuses = ['ignore', 'replaced', 'unknown', 'error', '', None, 123]
         
         for invalid_status in invalid_statuses:
             with self.subTest(status=invalid_status):
@@ -85,7 +85,7 @@ class TestFileStatusBasics(unittest.TestCase):
                     video_info.file_status = invalid_status
                     # 如果允许设置，验证是否有默认处理
                     self.assertIn(video_info.file_status, 
-                                ['present', 'missing', 'ignore'],
+                                ['present', 'missing', 'deleted'],
                                 f"无效状态 {invalid_status} 应该被处理为有效状态")
                 except (ValueError, TypeError):
                     # 如果抛出异常，这是预期的行为
@@ -157,27 +157,27 @@ class TestStatusTransitions(unittest.TestCase):
         self.assertEqual(original_fingerprint, restored_info.file_fingerprint,
                         "恢复的文件应该有相同的指纹")
     
-    def test_present_to_ignore_transition(self):
-        """测试present到ignore的转换"""
+    def test_present_to_deleted_transition(self):
+        """测试present到deleted的转换"""
         file_path = self._create_test_file("videos/ABC-123.mp4")
         video_info = VideoInfo(file_path)
         
-        # 用户标记为忽略
-        video_info.file_status = 'ignore'
-        self.assertEqual(video_info.file_status, 'ignore')
+        # 用户标记为已删除
+        video_info.file_status = 'deleted'
+        self.assertEqual(video_info.file_status, 'deleted')
         
-        # 验证文件仍然存在但被标记为忽略
+        # 验证文件仍然存在但被标记为已删除
         self.assertTrue(os.path.exists(file_path))
     
-    def test_ignore_to_present_transition(self):
-        """测试ignore到present的转换（取消忽略）"""
+    def test_deleted_to_present_transition(self):
+        """测试deleted到present的转换（恢复）"""
         file_path = self._create_test_file("videos/ABC-123.mp4")
         video_info = VideoInfo(file_path)
         
-        # 先标记为忽略
-        video_info.file_status = 'ignore'
+        # 先标记为已删除
+        video_info.file_status = 'deleted'
         
-        # 然后取消忽略
+        # 然后恢复
         video_info.file_status = 'present'
         self.assertEqual(video_info.file_status, 'present')
     
@@ -197,8 +197,8 @@ class TestStatusTransitions(unittest.TestCase):
         video_info.file_status = 'missing'
         self.assertEqual(video_info.file_status, 'missing')
         
-        video_info.file_status = 'ignore'
-        self.assertEqual(video_info.file_status, 'ignore')
+        video_info.file_status = 'deleted'
+        self.assertEqual(video_info.file_status, 'deleted')
 
 
 class TestStatusPersistence(unittest.TestCase):
@@ -267,17 +267,17 @@ class TestBatchStatusManagement(unittest.TestCase):
         # 批量更新状态
         for i, info in enumerate(video_infos):
             if i < 3:
-                info.file_status = 'ignore'
+                info.file_status = 'deleted'
             elif i < 6:
                 info.file_status = 'missing'
             # 其余保持present
         
         # 验证状态更新
-        ignore_count = sum(1 for info in video_infos if info.file_status == 'ignore')
+        deleted_count = sum(1 for info in video_infos if info.file_status == 'deleted')
         missing_count = sum(1 for info in video_infos if info.file_status == 'missing')
         present_count = sum(1 for info in video_infos if info.file_status == 'present')
         
-        self.assertEqual(ignore_count, 3)
+        self.assertEqual(deleted_count, 3)
         self.assertEqual(missing_count, 3)
         self.assertEqual(present_count, 4)
     
@@ -293,20 +293,20 @@ class TestBatchStatusManagement(unittest.TestCase):
             elif i % 3 == 1:
                 info.file_status = 'missing'
             else:
-                info.file_status = 'ignore'
+                info.file_status = 'deleted'
         
         # 按状态分组
         present_files = [info for info in video_infos if info.file_status == 'present']
         missing_files = [info for info in video_infos if info.file_status == 'missing']
-        ignore_files = [info for info in video_infos if info.file_status == 'ignore']
+        deleted_files = [info for info in video_infos if info.file_status == 'deleted']
         
         # 验证分组结果
         self.assertEqual(len(present_files), 5)  # 0, 3, 6, 9, 12
         self.assertEqual(len(missing_files), 5)   # 1, 4, 7, 10, 13
-        self.assertEqual(len(ignore_files), 5)    # 2, 5, 8, 11, 14
+        self.assertEqual(len(deleted_files), 5)    # 2, 5, 8, 11, 14
         
         # 验证总数
-        total = len(present_files) + len(missing_files) + len(ignore_files)
+        total = len(present_files) + len(missing_files) + len(deleted_files)
         self.assertEqual(total, 15)
 
 
@@ -329,7 +329,7 @@ class TestStatusQueryAndReporting(unittest.TestCase):
         test_data = [
             ("present", 10),
             ("missing", 5),
-            ("ignore", 3),
+            ("deleted", 3),
         ]
         
         all_infos = []
@@ -355,7 +355,7 @@ class TestStatusQueryAndReporting(unittest.TestCase):
         # 验证统计结果
         self.assertEqual(status_counts['present'], 10)
         self.assertEqual(status_counts['missing'], 5)
-        self.assertEqual(status_counts['ignore'], 3)
+        self.assertEqual(status_counts['deleted'], 3)
         self.assertEqual(sum(status_counts.values()), 18)
     
     def test_status_change_tracking(self):
@@ -378,8 +378,8 @@ class TestStatusQueryAndReporting(unittest.TestCase):
         video_info.file_status = 'missing'
         status_history.append(('missing', video_info.file_status, datetime.now()))
         
-        video_info.file_status = 'ignore'
-        status_history.append(('ignore', video_info.file_status, datetime.now()))
+        video_info.file_status = 'deleted'
+        status_history.append(('deleted', video_info.file_status, datetime.now()))
         
         video_info.file_status = 'present'
         status_history.append(('present', video_info.file_status, datetime.now()))
@@ -388,7 +388,7 @@ class TestStatusQueryAndReporting(unittest.TestCase):
         self.assertEqual(len(status_history), 4)
         self.assertEqual(status_history[0][1], 'present')  # 初始状态
         self.assertEqual(status_history[1][1], 'missing')
-        self.assertEqual(status_history[2][1], 'ignore')
+        self.assertEqual(status_history[2][1], 'deleted')
         self.assertEqual(status_history[3][1], 'present')  # 最终状态
 
 
@@ -430,8 +430,8 @@ class TestStatusIntegration(unittest.TestCase):
         
         # 验证状态与文件存在性的一致性
         if os.path.exists(file_path):
-            # 文件存在时，状态应该是present或ignore，不应该是missing
-            self.assertIn(video_info.file_status, ['present', 'ignore'])
+            # 文件存在时，状态应该是present
+            self.assertIn(video_info.file_status, ['present'])
         else:
             # 文件不存在时，状态应该是missing
             self.assertEqual(video_info.file_status, 'missing')

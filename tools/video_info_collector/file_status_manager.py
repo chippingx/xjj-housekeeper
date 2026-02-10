@@ -1,7 +1,7 @@
 """
 文件状态管理器
 
-管理三状态文件状态系统：present/missing/ignore
+管理三状态文件状态系统：present/missing/deleted
 """
 
 import os
@@ -19,8 +19,7 @@ class FileStatus(Enum):
     """文件状态枚举"""
     PRESENT = "present"    # 文件存在且可访问
     MISSING = "missing"    # 文件丢失或不可访问
-    IGNORE = "ignore"      # 在其它目录下新发现同指纹文件，标记为忽略
-    REPLACED = "replaced"  # 文件已被同video_code的新版本替换
+    DELETED = "deleted"    # 用户标记为已删除
 
 
 class FileStatusManager:
@@ -91,24 +90,18 @@ class FileStatusManager:
             'checked': 0,
             'present': 0,
             'missing': 0,
-            'ignore': 0,
             'status_changes': []
         }
         
         for video_info in video_infos:
             results['checked'] += 1
             
-            # 如果当前状态是ignore，跳过检查
-            if video_info.file_status == FileStatus.IGNORE.value:
-                results['ignore'] += 1
-                continue
-            
             # 检查实际状态
             actual_status = self.check_file_status(video_info.file_path)
             old_status = video_info.file_status
             
             # 更新状态
-            if actual_status.value != old_status:
+            if old_status != FileStatus.DELETED.value and actual_status.value != old_status:
                 self.update_video_status(video_info, actual_status, "batch_check")
                 results['status_changes'].append({
                     'file_path': video_info.file_path,
@@ -123,42 +116,6 @@ class FileStatusManager:
                 results['missing'] += 1
         
         return results
-    
-    def mark_as_ignore(self, video_infos: List[VideoInfo], reason: str = "user_request") -> int:
-        """
-        批量标记文件为忽略状态
-        
-        Args:
-            video_infos: 视频信息列表
-            reason: 忽略原因
-            
-        Returns:
-            int: 成功标记的文件数量
-        """
-        count = 0
-        for video_info in video_infos:
-            if video_info.file_status != FileStatus.IGNORE.value:
-                self.update_video_status(video_info, FileStatus.IGNORE, reason)
-                count += 1
-        return count
-    
-    def unmark_ignore(self, video_infos: List[VideoInfo]) -> int:
-        """
-        取消忽略标记，恢复到实际状态
-        
-        Args:
-            video_infos: 视频信息列表
-            
-        Returns:
-            int: 成功取消标记的文件数量
-        """
-        count = 0
-        for video_info in video_infos:
-            if video_info.file_status == FileStatus.IGNORE.value:
-                actual_status = self.check_file_status(video_info.file_path)
-                self.update_video_status(video_info, actual_status, "unmark_ignore")
-                count += 1
-        return count
     
     def get_files_by_status(self, video_infos: List[VideoInfo], 
                            status: FileStatus) -> List[VideoInfo]:
@@ -181,10 +138,10 @@ class FileStatusManager:
     def get_present_files(self, video_infos: List[VideoInfo]) -> List[VideoInfo]:
         """获取存在的文件"""
         return self.get_files_by_status(video_infos, FileStatus.PRESENT)
-    
-    def get_ignored_files(self, video_infos: List[VideoInfo]) -> List[VideoInfo]:
-        """获取被忽略的文件"""
-        return self.get_files_by_status(video_infos, FileStatus.IGNORE)
+
+    def get_deleted_files(self, video_infos: List[VideoInfo]) -> List[VideoInfo]:
+        """获取已删除的文件"""
+        return self.get_files_by_status(video_infos, FileStatus.DELETED)
     
     def get_status_statistics(self, video_infos: List[VideoInfo]) -> Dict[str, any]:
         """
@@ -200,7 +157,7 @@ class FileStatusManager:
             'total': len(video_infos),
             'present': 0,
             'missing': 0,
-            'ignore': 0,
+            'deleted': 0,
             'unknown': 0
         }
         
@@ -210,14 +167,14 @@ class FileStatusManager:
                 stats['present'] += 1
             elif status == FileStatus.MISSING.value:
                 stats['missing'] += 1
-            elif status == FileStatus.IGNORE.value:
-                stats['ignore'] += 1
+            elif status == FileStatus.DELETED.value:
+                stats['deleted'] += 1
             else:
                 stats['unknown'] += 1
         
         # 计算百分比
         if stats['total'] > 0:
-            for key in ['present', 'missing', 'ignore', 'unknown']:
+            for key in ['present', 'missing', 'deleted', 'unknown']:
                 stats[f'{key}_percentage'] = (stats[key] / stats['total']) * 100
         
         return stats
@@ -235,12 +192,10 @@ class FileStatusManager:
         inconsistencies = []
         
         for video_info in video_infos:
-            # 跳过被忽略的文件
-            if video_info.file_status == FileStatus.IGNORE.value:
-                continue
-            
-            actual_status = self.check_file_status(video_info.file_path)
             recorded_status = video_info.file_status
+            if recorded_status == FileStatus.DELETED.value:
+                continue
+            actual_status = self.check_file_status(video_info.file_path)
             
             if actual_status.value != recorded_status:
                 inconsistencies.append({
@@ -323,6 +278,6 @@ class FileStatusManager:
             'statistics': stats,
             'inconsistencies': inconsistencies,
             'missing_files': [v.file_path for v in self.get_missing_files(video_infos)],
-            'ignored_files': [v.file_path for v in self.get_ignored_files(video_infos)],
+            'deleted_files': [v.file_path for v in self.get_deleted_files(video_infos)],
             'recent_changes': self.get_status_change_history(limit=50)
         }

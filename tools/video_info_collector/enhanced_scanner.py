@@ -206,7 +206,7 @@ class EnhancedVideoScanner:
             'auto_fixed': fix_results,
             'details': {
                 'missing_files': [v.file_path for v in self.status_manager.get_missing_files(existing_videos)],
-                'ignored_files': [v.file_path for v in self.status_manager.get_ignored_files(existing_videos)]
+                'deleted_files': [v.file_path for v in self.status_manager.get_deleted_files(existing_videos)]
             }
         }
         
@@ -254,7 +254,7 @@ class EnhancedVideoScanner:
                            'frame_rate', 'created_time']
             
             new_columns = ['video_code', 'file_fingerprint', 'file_status', 
-                          'last_scan_time', 'last_merge_time']
+                          'last_scan_time', 'last_merge_time', 'id']
             
             # 只选择存在的列
             select_columns = []

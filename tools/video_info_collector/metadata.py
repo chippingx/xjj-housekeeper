@@ -45,6 +45,38 @@ def extract_video_code(filename: str) -> Optional[str]:
     return None
 
 
+def _normalize_duration(value: Any) -> Optional[int]:
+    try:
+        return int(round(float(value)))
+    except (ValueError, TypeError):
+        return None
+
+
+def _normalize_frame_rate(value: Any) -> Optional[int]:
+    try:
+        return int(round(float(value)))
+    except (ValueError, TypeError):
+        return None
+
+
+def generate_file_fingerprint(
+    filename: str,
+    file_size: Optional[int],
+    video_code: Optional[str],
+) -> str:
+    if not filename:
+        return ""
+    fingerprint_data = []
+    base_name = os.path.splitext(filename)[0]
+    fingerprint_data.append(base_name.lower())
+    if file_size is not None:
+        fingerprint_data.append(str(file_size))
+    if video_code:
+        fingerprint_data.append(video_code.lower())
+    fingerprint_string = '|'.join(fingerprint_data)
+    return hashlib.md5(fingerprint_string.encode('utf-8')).hexdigest()
+
+
 class VideoInfo:
     """视频信息数据类"""
     
@@ -78,7 +110,7 @@ class VideoInfo:
         # 新增字段
         self.video_code: Optional[str] = None
         self.file_fingerprint: Optional[str] = None
-        self._file_status: str = 'present'  # present/missing/ignore/replaced
+        self._file_status: str = 'present'  # present/missing/deleted
         self.last_merge_time: Optional[datetime] = None
         
         # 获取文件基本信息
@@ -106,34 +138,11 @@ class VideoInfo:
     
     def _generate_fingerprint(self):
         """生成文件指纹"""
-        if not self.filename:
-            return
-        
-        # 组合指纹信息：文件名 + 文件大小 + 创建时间 + video_code
-        fingerprint_data = []
-        
-        # 文件名（去除扩展名）
-        base_name = os.path.splitext(self.filename)[0]
-        fingerprint_data.append(base_name.lower())
-        
-        # 文件大小
-        if self.file_size is not None:
-            fingerprint_data.append(str(self.file_size))
-        
-        # 创建时间（精确到秒）
-        if self.created_time:
-            if hasattr(self.created_time, 'timestamp'):
-                fingerprint_data.append(str(int(self.created_time.timestamp())))
-            else:
-                fingerprint_data.append(str(self.created_time))
-        
-        # video_code
-        if self.video_code:
-            fingerprint_data.append(self.video_code.lower())
-        
-        # 生成MD5哈希
-        fingerprint_string = '|'.join(fingerprint_data)
-        self.file_fingerprint = hashlib.md5(fingerprint_string.encode('utf-8')).hexdigest()
+        self.file_fingerprint = generate_file_fingerprint(
+            filename=self.filename,
+            file_size=self.file_size,
+            video_code=self.video_code,
+        )
     
     @property
     def resolution(self) -> Optional[str]:
@@ -163,7 +172,7 @@ class VideoInfo:
     @file_status.setter
     def file_status(self, value: str):
         """设置文件状态，验证有效性"""
-        valid_statuses = ['present', 'missing', 'ignore', 'replaced']
+        valid_statuses = ['present', 'missing', 'deleted']
         if value not in valid_statuses:
             raise ValueError(f"Invalid file status '{value}'. Valid statuses are: {valid_statuses}")
         self._file_status = value
@@ -223,6 +232,7 @@ class VideoMetadataExtractor:
             metadata = self._run_ffprobe(file_path)
             if metadata:
                 self._parse_metadata(video_info, metadata)
+                video_info._generate_fingerprint()
         except Exception:
             # 如果ffprobe失败，只返回基本信息
             pass
@@ -298,7 +308,7 @@ class VideoMetadataExtractor:
         format_info = metadata.get('format', {})
         if 'duration' in format_info:
             try:
-                video_info.duration = float(format_info['duration'])
+                video_info.duration = _normalize_duration(format_info['duration'])
             except (ValueError, TypeError):
                 pass
         
@@ -342,9 +352,9 @@ class VideoMetadataExtractor:
                         if '/' in frame_rate_str:
                             num, den = frame_rate_str.split('/')
                             if int(den) != 0:
-                                video_info.frame_rate = float(num) / float(den)
+                                video_info.frame_rate = _normalize_frame_rate(float(num) / float(den))
                         else:
-                            video_info.frame_rate = float(frame_rate_str)
+                            video_info.frame_rate = _normalize_frame_rate(frame_rate_str)
                     except (ValueError, TypeError, ZeroDivisionError):
                         pass
             

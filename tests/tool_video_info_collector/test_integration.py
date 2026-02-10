@@ -115,9 +115,10 @@ def test_file_status_manager():
         status_results = status_manager.batch_check_status(videos)
         print(f"状态检查结果: {status_results}")
         
-        # 标记一些文件为忽略
-        ignore_count = status_manager.mark_as_ignore(videos[:2], "测试忽略")
-        print(f"标记了 {ignore_count} 个文件为忽略")
+        # 标记一些文件为已删除
+        for video in videos[:2]:
+            status_manager.update_video_status(video, FileStatus.DELETED, "测试删除")
+        print("标记了 2 个文件为已删除")
         
         # 获取统计信息
         stats = status_manager.get_status_statistics(videos)

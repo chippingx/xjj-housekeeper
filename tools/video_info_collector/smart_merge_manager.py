@@ -25,7 +25,7 @@ class MergeAction:
     
     def __init__(self, action_type: str, video_info: VideoInfo, 
                  target_info: Optional[VideoInfo] = None, reason: str = ""):
-        self.action_type = action_type  # insert_new, update_path, mark_missing, duplicate_detection
+        self.action_type = action_type  # insert_new, update_path, mark_missing
         self.video_info = video_info
         self.target_info = target_info
         self.reason = reason
@@ -56,31 +56,23 @@ class SmartMergeManager:
         results = {
             'insert_new': [],
             'update_path': [],
-            'mark_missing': [],
-            'mark_replaced': [],  # 新增：标记被替换的文件
-            'duplicate_detection': [],
-            'conflicts': []
+            'mark_missing': []
         }
         
         # 创建现有视频的指纹索引
         existing_by_fingerprint = {}
-        existing_by_video_code = {}
         existing_by_path = {}
         
         for video in existing_videos:
             if video.file_fingerprint:
                 existing_by_fingerprint[video.file_fingerprint] = video
-            if video.video_code:
-                if video.video_code not in existing_by_video_code:
-                    existing_by_video_code[video.video_code] = []
-                existing_by_video_code[video.video_code].append(video)
             existing_by_path[video.file_path] = video
         
         # 分析每个新视频
         for new_video in new_videos:
             action = self._determine_merge_action(
                 new_video, existing_by_fingerprint, 
-                existing_by_video_code, existing_by_path
+                existing_by_path
             )
             
             if action:
@@ -88,20 +80,18 @@ class SmartMergeManager:
         
         # 检查现有视频中的丢失文件
         for existing_video in existing_videos:
-            if existing_video.file_status != FileStatus.IGNORE.value:
-                actual_status = self.status_manager.check_file_status(existing_video.file_path)
-                if actual_status == FileStatus.MISSING and existing_video.file_status != FileStatus.MISSING.value:
-                    action = MergeAction(
-                        'mark_missing', existing_video, 
-                        reason=f"File not found during scan: {existing_video.file_path}"
-                    )
-                    results['mark_missing'].append(action)
+            actual_status = self.status_manager.check_file_status(existing_video.file_path)
+            if actual_status == FileStatus.MISSING and existing_video.file_status != FileStatus.MISSING.value:
+                action = MergeAction(
+                    'mark_missing', existing_video, 
+                    reason=f"File not found during scan: {existing_video.file_path}"
+                )
+                results['mark_missing'].append(action)
         
         return results
     
     def _determine_merge_action(self, new_video: VideoInfo, 
                               existing_by_fingerprint: Dict, 
-                              existing_by_video_code: Dict, 
                               existing_by_path: Dict) -> Optional[MergeAction]:
         """
         确定合并动作
@@ -118,13 +108,10 @@ class SmartMergeManager:
         # 1. 检查路径是否已存在
         if new_video.file_path in existing_by_path:
             existing_video = existing_by_path[new_video.file_path]
-            # 路径相同，检查是否需要更新其他信息
-            if self._should_update_existing(new_video, existing_video):
-                return MergeAction(
-                    'update_path', new_video, existing_video,
-                    reason="Update existing video with new metadata"
-                )
-            return None  # 无需操作
+            return MergeAction(
+                'update_path', new_video, existing_video,
+                reason="Path exists, refresh metadata and status"
+            )
         
         # 2. 检查指纹匹配（文件移动检测）
         if new_video.file_fingerprint and new_video.file_fingerprint in existing_by_fingerprint:
@@ -135,42 +122,7 @@ class SmartMergeManager:
                     reason=f"File moved from {existing_video.file_path} to {new_video.file_path}"
                 )
         
-        # 3. 检查视频代码重复
-        if new_video.video_code and new_video.video_code in existing_by_video_code:
-            existing_videos = existing_by_video_code[new_video.video_code]
-            
-            # 检查是否有完全匹配的指纹
-            for existing_video in existing_videos:
-                if (existing_video.file_fingerprint == new_video.file_fingerprint and 
-                    existing_video.file_path != new_video.file_path):
-                    return MergeAction(
-                        'update_path', new_video, existing_video,
-                        reason=f"Same file with video_code {new_video.video_code} moved"
-                    )
-            
-            # 检查是否为文件替换场景
-            for existing_video in existing_videos:
-                if (existing_video.file_status == FileStatus.PRESENT.value and
-                    existing_video.file_fingerprint != new_video.file_fingerprint):
-                    # 相同video_code但不同fingerprint，可能是文件替换
-                    if self._is_replacement_scenario(new_video, existing_video):
-                        # 创建两个动作：标记旧文件为replaced，插入新文件
-                        return MergeAction(
-                            'mark_replaced', new_video, existing_video,
-                            reason=f"File replaced: {existing_video.file_path} -> {new_video.file_path}"
-                        )
-            
-            # 检查是否为重复下载
-            for existing_video in existing_videos:
-                if existing_video.file_status == FileStatus.PRESENT.value:
-                    similarity = self._calculate_similarity(new_video, existing_video)
-                    if similarity > 0.8:  # 高相似度阈值
-                        return MergeAction(
-                            'duplicate_detection', new_video, existing_video,
-                            reason=f"Potential duplicate of {existing_video.file_path} (similarity: {similarity:.2f})"
-                        )
-        
-        # 4. 默认为新插入
+        # 3. 默认为新插入
         return MergeAction(
             'insert_new', new_video,
             reason="New video file detected"
@@ -370,17 +322,10 @@ class SmartMergeManager:
                 # 持久化到数据库
                 if hasattr(action.target_info, 'id') and action.target_info.id:
                     update_data = {
-                        'filename': action.target_info.filename,
-                        'file_size': action.target_info.file_size,
-                        'duration': action.target_info.duration,
-                        'width': action.target_info.width,
-                        'height': action.target_info.height,
-                        'video_codec': action.target_info.video_codec,
-                        'audio_codec': action.target_info.audio_codec,
-                        'bit_rate': action.target_info.bit_rate,
-                        'frame_rate': action.target_info.frame_rate,
+                        'file_path': action.target_info.file_path,
                         'file_status': action.target_info.file_status,
-                        'logical_path': action.target_info.logical_path
+                        'logical_path': action.target_info.logical_path,
+                        'last_scan_time': action.target_info.last_scan_time
                     }
                     self.storage.update_video_info(action.target_info.id, update_data)
                 # 记录merge history
@@ -423,78 +368,22 @@ class SmartMergeManager:
                 print(f"Error marking video as missing {action.video_info.file_path}: {e}")
                 stats['errors'] += 1
         
-        # 标记被替换文件
-        for action in merge_results.get('mark_replaced', []):
-            try:
-                # 标记旧文件为REPLACED状态
-                self.status_manager.update_video_status(
-                    action.target_info, FileStatus.REPLACED, action.reason
-                )
-                # 持久化到数据库
-                if hasattr(action.target_info, 'id') and action.target_info.id:
-                    update_data = {'file_status': action.target_info.file_status}
-                    self.storage.update_video_info(action.target_info.id, update_data)
-                # 插入新文件
-                video_id = self.storage.insert_video_info(action.video_info)
-                if video_id:
-                    # 更新master list（新文件）
-                    self._update_master_list(action.video_info, 'insert_new')
-                    # 更新master list计数（考虑被替换的文件）
-                    self._update_master_list(action.target_info, 'mark_replaced')
-                    # 记录merge history
-                    if scan_id:
-                        self.storage.add_merge_event(
-                            'mark_replaced',
-                            action.target_info.video_code,  # video_code
-                            action.target_info.file_path,   # old_path
-                            action.video_info.file_path,    # new_path
-                            None,  # details
-                            scan_id  # scan_session_id
-                        )
-                stats['marked_replaced'] += 1
-            except Exception as e:
-                print(f"Error marking video as replaced {action.target_info.file_path}: {e}")
-                stats['errors'] += 1
-        
-        # 处理重复检测
-        for action in merge_results.get('duplicate_detection', []):
-            try:
-                # 这里可以根据策略决定如何处理重复文件
-                # 例如：标记为重复、移动到特定目录、或者询问用户
-                print(f"Duplicate detected: {action.video_info.file_path} vs {action.target_info.file_path}")
-                stats['duplicates_detected'] += 1
-            except Exception as e:
-                print(f"Error handling duplicate {action.video_info.file_path}: {e}")
-                stats['errors'] += 1
-        
         return stats
     
     def _update_master_list(self, video_info: VideoInfo, event_type: str):
         """更新master list"""
         if video_info.video_code:
-            if event_type == 'mark_replaced':
-                # 对于替换事件，重新计算该video_code的文件计数
-                self.storage.update_master_list_file_count(video_info.video_code)
-            else:
-                # 对于其他事件，使用原有的upsert逻辑
-                self.storage.upsert_master_list_entry(
-                    video_info.video_code
-                )
+            self.storage.upsert_master_list_entry(
+                video_info.video_code
+            )
     
     def _update_existing_video(self, existing_video: VideoInfo, new_video: VideoInfo):
         """更新现有视频记录"""
         # 更新路径和其他可能变化的字段
         existing_video.file_path = new_video.file_path
-        existing_video.file_size = new_video.file_size or existing_video.file_size
-        existing_video.duration = new_video.duration or existing_video.duration
-        existing_video.width = new_video.width or existing_video.width
-        existing_video.height = new_video.height or existing_video.height
-        existing_video.video_codec = new_video.video_codec or existing_video.video_codec
-        existing_video.audio_codec = new_video.audio_codec or existing_video.audio_codec
-        existing_video.bit_rate = new_video.bit_rate or existing_video.bit_rate
-        existing_video.frame_rate = new_video.frame_rate or existing_video.frame_rate
         existing_video.file_status = FileStatus.PRESENT.value
         existing_video.last_scan_time = datetime.now().isoformat()
+        existing_video.logical_path = new_video.logical_path or existing_video.logical_path
         
         # 合并标签
         if new_video.tags:
@@ -518,9 +407,7 @@ class SmartMergeManager:
                 'total_actions': sum(len(actions) for actions in merge_results.values()),
                 'insert_new': len(merge_results.get('insert_new', [])),
                 'update_path': len(merge_results.get('update_path', [])),
-                'mark_missing': len(merge_results.get('mark_missing', [])),
-                'duplicate_detection': len(merge_results.get('duplicate_detection', [])),
-                'conflicts': len(merge_results.get('conflicts', []))
+                'mark_missing': len(merge_results.get('mark_missing', []))
             },
             'details': {}
         }

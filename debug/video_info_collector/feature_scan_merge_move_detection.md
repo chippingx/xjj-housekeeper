@@ -5,13 +5,13 @@
 本节根据最新共识补充并收敛设计，以保持“低复杂度、清晰语义、最小改动”。不修改现有工作流，仅明确字段与表职责，并给出场景验证。若与后文旧草案存在不一致，以本节规则为准。
 
 ### 核心取舍
-- `video_info.file_status`统一为三态：`present` / `missing` / `ignore`。
+- `video_info.file_status`统一为三态：`present` / `missing` / `deleted`。
 - `last_scan_time`更名为合并维度的时间：`last_merge_time`（语义更清晰），不记录真实扫描时间。
 - 统一命名为 `video_code`（而非 `code`），在各表与示例中保持一致。
 - `video_master_list`字段最小化：`video_code`（唯一）、`status`（`present`/`deleted`）、`update_time`；“最新 `logical_path`”可采用冗余字段`latest_logical_path`或在查询时通过 `video_info` 的 `present` 记录计算（推荐查询计算）。
-- `merge_history`为文件级日志，事件三类：`insert_new`、`insert_ignore`、`mark_missing`；`scan_id`用于关联到`scan_history`，若无法检索到则置空（`NULL`）。
+- `merge_history`为文件级日志，事件三类：`insert_new`、`update_path`、`mark_missing`；`scan_id`用于关联到`scan_history`，若无法检索到则置空（`NULL`）。
 - `scan_history`在“扫描时”维护；`merge_history`在“合并时”维护，避免角色混淆。
-- 指纹采用轻量方案，不读视频内容：`created_time + video_code + duration + width + height + bit_rate + size`（规范化组成，附版本前缀如`v1:`）。
+- 指纹采用轻量方案，不读视频内容：`filename + file_size + video_code`（规范化组成，附版本前缀如`v1:`）。
 - 全局信任指纹：默认不存在同指纹的真实多副本；如偶发存在，后续可人工检索处理。
 - `video_master_list`不使用指纹；`video_info`与`video_master_list`均存`video_code`并以其为用户视角的唯一业务标识。
 
@@ -20,14 +20,13 @@
   - 重点新增字段：
     - `video_code TEXT`（统一小写存储，查询使用 NOCASE）
     - `file_fingerprint TEXT`
-    - `file_status TEXT`（`present`/`missing`/`ignore`）
+    - `file_status TEXT`（`present`/`missing`/`deleted`）
     - `last_merge_time INTEGER`（UNIX 时间戳）
   - 推荐索引：`idx_video_info_video_code`、`idx_video_info_fingerprint`、`idx_video_info_status`、`idx_video_info_last_merge_time`
 
   - 全局不变式与约束：
-    - 每个指纹始终仅有一条“非 `ignore` 主记录”（`file_status ∈ {present, missing}`）；允许存在若干历史 `ignore` 记录。
-    - 当新路径出现且旧主记录为`present`时：插入“新主记录”（`file_status=present`），并将“旧主记录”标记为`ignore`；不修改旧记录的任何时间戳（含`last_merge_time`、`updated_time`）。
-    - 查询与报表默认过滤 `file_status=ignore`，必要时提供人工检索入口。
+    - 每个指纹仅保留一条当前记录（`file_status ∈ {present, missing, deleted}`）。
+    - 当新路径出现时更新现有记录的 `file_path` 与 `file_status`，不保留历史副本记录。
 
 - `video_master_list`（用户报表主表）
   - 字段（最小化）：
@@ -45,14 +44,14 @@
     - `id INTEGER PRIMARY KEY AUTOINCREMENT`
     - `merge_time INTEGER NOT NULL`（UNIX 时间戳）
     - `scan_id INTEGER NULL`（指向 `scan_history.id`，若无法解析则 `NULL`）
-    - `event_type TEXT NOT NULL`（`insert_new` | `insert&ignore` | `mark_missing`）
+    - `event_type TEXT NOT NULL`（`insert_new` | `update_path` | `mark_missing`）
     - `video_id INTEGER`（可选，指向 `video_info.id`）
     - `video_code TEXT`、`file_path TEXT`、`logical_path TEXT`、`file_fingerprint TEXT`
   - 索引：`idx_merge_scan(scan_id, merge_time)`、`idx_merge_fingerprint(file_fingerprint)`、`idx_merge_video_code(video_code)`、`idx_merge_video_id(video_id)`
   - `scan_id`解析策略：优先按 `csv_file` 精确匹配 `scan_history`；不命中则按 `csv_fingerprint` 或 `scan_time` 近邻匹配；均失败则置 `NULL`。
 
 ### 指纹规范（轻量版）
-- 组成：`created_time + code + duration + width + height + bit_rate + size`
+- 组成：`filename + file_size + code`
 - 规范化建议：
   - `code`统一小写、去扩展名与空白；查询 `COLLATE NOCASE`；
   - `duration`保留到小数点后2位；`bit_rate`按`kbps`取整；`size`原值；
@@ -64,9 +63,7 @@
 2) 比对 `video_info`：
    - 新出现的指纹：`insert` → 写入/更新为 `present`，更新 `file_path`、`last_merge_time`，写 `merge_history.insert`。
    - 已存在指纹且路径相同：仅刷新 `last_merge_time`（不写日志）。
-   - 已存在指纹但路径不同：
-     - 若旧主记录当前为 `missing`，则更新该主记录的 `file_path` 为新路径，状态置为 `present`，刷新 `last_merge_time`，写 `merge_history.insert`（“缺失→找回/移动后的出现”）。
-     - 若旧主记录当前为 `present`，则插入一条“新主记录”（`is_ignore=0`,`file_status=present`，携带新路径），同时将旧主记录标记为 `ignore`（`is_ignore=1`）；不修改旧记录的任何时间戳（包括 `last_merge_time`、`updated_time`）。不保留“多副本”的双主状态。
+   - 已存在指纹但路径不同：更新该主记录的 `file_path` 为新路径，状态置为 `present`，刷新 `last_merge_time`，写 `merge_history.update_path`。
 3) 对数据库中上次在同一扫描范围下为 `present`但本次 CSV 未出现的记录：标记为 `missing`，刷新 `last_merge_time`，写 `merge_history.mark_missing`。
 
 > 注意：不强制底层“判定移动”。移动仅作为报表层的分析结论（近邻 `mark_missing + insert` 同指纹）呈现，不引入额外事件类型或字段。
@@ -84,10 +81,10 @@
 - 行为：恢复后出现同指纹 → 更新原记录为 `present`，根据实际路径更新 `file_path`。
 - 结论：安全，无脏数据；“缺失→找回”的典型流程。
 
-3) 同指纹的多副本同时存在（按规则退役旧主记录）
+3) 同指纹的多副本同时存在（仅保留最新路径）
 - 场景：同一视频存在两个物理副本 `/A/file.mp4` 与 `/B/file.mp4`，仅 `/B` 被合并。
-- 行为：基于“信任指纹”，在检测到新路径且旧主记录为 `present` 时，直接插入“新主记录”，并将旧主记录标记为 `ignore`（隐藏旧副本）。
-- 影响：真实的多副本事实被隐藏（旧副本退役为 `ignore`）；如需处理，后续可通过检索 `ignore` 记录进行人工清理或恢复。
+- 行为：基于“信任指纹”，更新现有记录的 `file_path` 为最新路径，保持单记录。
+- 影响：不保留多副本记录，如需清理需手动处理。
 - 结论：符合“信任指纹、单主记录”的取舍；不为多副本场景增加复杂性或安全闸门。
 
 4) 仅重命名（不视为同指纹）

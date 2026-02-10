@@ -6,13 +6,12 @@
 
 import hashlib
 import os
-from datetime import datetime
 from typing import List, Dict, Optional, Tuple, Set
 
 try:
-    from .metadata import VideoInfo
+    from .metadata import VideoInfo, generate_file_fingerprint
 except ImportError:
-    from metadata import VideoInfo
+    from metadata import VideoInfo, generate_file_fingerprint
 
 
 class FingerprintManager:
@@ -32,34 +31,11 @@ class FingerprintManager:
         Returns:
             str: 文件指纹（MD5哈希）
         """
-        if not video_info.filename:
-            return ""
-        
-        # 组合指纹信息：文件名 + 文件大小 + 创建时间 + video_code
-        fingerprint_data = []
-        
-        # 文件名（去除扩展名，转小写）
-        base_name = os.path.splitext(video_info.filename)[0]
-        fingerprint_data.append(base_name.lower())
-        
-        # 文件大小
-        if video_info.file_size is not None:
-            fingerprint_data.append(str(video_info.file_size))
-        
-        # 创建时间（精确到秒）
-        if video_info.created_time:
-            if hasattr(video_info.created_time, 'timestamp'):
-                fingerprint_data.append(str(int(video_info.created_time.timestamp())))
-            else:
-                fingerprint_data.append(str(video_info.created_time))
-        
-        # video_code
-        if video_info.video_code:
-            fingerprint_data.append(video_info.video_code.lower())
-        
-        # 生成MD5哈希
-        fingerprint_string = '|'.join(fingerprint_data)
-        fingerprint = hashlib.md5(fingerprint_string.encode('utf-8')).hexdigest()
+        fingerprint = generate_file_fingerprint(
+            filename=video_info.filename,
+            file_size=video_info.file_size,
+            video_code=video_info.video_code,
+        )
         
         # 缓存指纹
         self.fingerprint_cache[video_info.file_path] = fingerprint
@@ -67,7 +43,7 @@ class FingerprintManager:
         return fingerprint
     
     def generate_lightweight_fingerprint(self, filename: str, file_size: int, 
-                                       created_time: datetime, video_code: Optional[str] = None) -> str:
+                                       video_code: Optional[str] = None) -> str:
         """
         生成轻量级指纹（不需要VideoInfo对象）
         
@@ -88,12 +64,6 @@ class FingerprintManager:
         
         # 文件大小
         fingerprint_data.append(str(file_size))
-        
-        # 创建时间（精确到秒）
-        if hasattr(created_time, 'timestamp'):
-            fingerprint_data.append(str(int(created_time.timestamp())))
-        else:
-            fingerprint_data.append(str(created_time))
         
         # video_code
         if video_code:

@@ -32,13 +32,13 @@
 ### 2. File Fingerprint (文件指纹)
 **标准术语**: `file_fingerprint`
 **定义**: 基于文件元数据生成的轻量级唯一标识符
-**组成**: filename + file_size + created_time + duration 的哈希值
+**组成**: filename + file_size + video_code 的哈希值
 **用途**: 文件移动检测、重复文件识别
 
 ### 3. File Status (文件状态)
 **标准术语**: `file_status`
 **定义**: 文件在系统中的当前状态
-**可选值**: `present`, `missing`, `ignore`, `replaced`
+**可选值**: `present`, `missing`, `deleted`
 **用途**: 文件生命周期管理、清理策略
 
 ---

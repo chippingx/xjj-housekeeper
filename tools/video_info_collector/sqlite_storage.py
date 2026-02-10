@@ -11,9 +11,9 @@ from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime
 
 try:
-    from .metadata import VideoInfo
+    from .metadata import VideoInfo, generate_file_fingerprint
 except ImportError:
-    from metadata import VideoInfo
+    from metadata import VideoInfo, generate_file_fingerprint
 
 
 class SQLiteStorage:
@@ -514,7 +514,7 @@ class SQLiteStorage:
                 UPDATE video_info SET
                     filename = ?, width = ?, height = ?, resolution = ?,
                     duration = ?, duration_formatted = ?, video_codec = ?, audio_codec = ?, 
-                    file_size = ?, bit_rate = ?, frame_rate = ?, logical_path = ?, created_time = ?, updated_time = CURRENT_TIMESTAMP
+                    file_size = ?, bit_rate = ?, frame_rate = ?, logical_path = ?, created_time = ?, video_code = ?, file_fingerprint = ?, updated_time = CURRENT_TIMESTAMP
                 WHERE file_path = ?
             """, (
                 video_info.filename,
@@ -530,6 +530,8 @@ class SQLiteStorage:
                 video_info.frame_rate,
                 video_info.logical_path,
                 video_info.created_time.isoformat() if isinstance(video_info.created_time, datetime) else str(video_info.created_time),
+                video_info.video_code,
+                video_info.file_fingerprint,
                 video_info.file_path
             ))
             self.connection.commit()
@@ -748,8 +750,7 @@ class SQLiteStorage:
         params = []
         
         for key, value in update_data.items():
-            if key in ['filename', 'created_time', 'width', 'height', 'resolution', 'duration',
-                      'duration_formatted', 'video_codec', 'audio_codec', 'file_size', 'bit_rate', 'frame_rate', 'logical_path', 'file_status']:
+            if key in ['file_path', 'logical_path', 'file_status', 'last_scan_time', 'last_merge_time']:
                 set_clauses.append(f"{key} = ?")
                 params.append(value)
         
@@ -885,12 +886,23 @@ class SQLiteStorage:
                         video_info.created_time = row['created_time']
                         video_info.width = int(row['width']) if row['width'] else None
                         video_info.height = int(row['height']) if row['height'] else None
-                        video_info.duration = float(row['duration']) if row['duration'] else None
+                        if row['duration']:
+                            video_info.duration = int(round(float(row['duration'])))
+                        else:
+                            video_info.duration = None
                         video_info.video_codec = row['video_codec'] if row['video_codec'] else None
                         video_info.audio_codec = row['audio_codec'] if row['audio_codec'] else None
                         video_info.file_size = int(row['file_size']) if row['file_size'] else None
                         video_info.bit_rate = int(row['bit_rate']) if row['bit_rate'] else None
-                        video_info.frame_rate = float(row['frame_rate']) if row.get('frame_rate') else None
+                        if row['frame_rate']:
+                            video_info.frame_rate = int(round(float(row['frame_rate'])))
+                        else:
+                            video_info.frame_rate = None
+                        video_info.file_fingerprint = generate_file_fingerprint(
+                            filename=video_info.filename,
+                            file_size=video_info.file_size,
+                            video_code=video_info.video_code,
+                        )
                         
                         video_id = self.upsert_video_info(video_info)
                         if video_id:
@@ -1179,17 +1191,16 @@ class SQLiteStorage:
         return dict(result) if result else {}
     
     def recalculate_master_list_file_counts(self):
-        """重新计算主列表的文件计数，排除REPLACED状态的文件"""
+        """重新计算主列表的文件计数，仅统计present状态的文件"""
         cursor = self.connection.cursor()
         
-        # 更新所有video_code的file_count，基于video_info表中非REPLACED状态的记录
         cursor.execute("""
             UPDATE video_master_list 
             SET file_count = (
                 SELECT COUNT(*) 
                 FROM video_info 
                 WHERE video_info.video_code = video_master_list.video_code 
-                AND video_info.file_status != 'replaced'
+                AND video_info.file_status = 'present'
             ),
             last_updated = CURRENT_TIMESTAMP
         """)
@@ -1197,7 +1208,7 @@ class SQLiteStorage:
         self.connection.commit()
     
     def update_master_list_file_count(self, video_code: str):
-        """更新特定video_code的文件计数，排除REPLACED状态的文件"""
+        """更新特定video_code的文件计数，仅统计present状态的文件"""
         cursor = self.connection.cursor()
         
         cursor.execute("""
@@ -1206,13 +1217,46 @@ class SQLiteStorage:
                 SELECT COUNT(*) 
                 FROM video_info 
                 WHERE video_code = ? 
-                AND file_status != 'replaced'
+                AND file_status = 'present'
             ),
             last_updated = CURRENT_TIMESTAMP
             WHERE video_code = ?
         """, (video_code, video_code))
         
         self.connection.commit()
+
+    def normalize_frame_rate_duration_and_recompute_fingerprint(self) -> Dict[str, int]:
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT id, filename, file_size, created_time, video_code, duration, frame_rate
+            FROM video_info
+        """)
+        rows = cursor.fetchall()
+        updated = 0
+        for row in rows:
+            duration = row['duration']
+            frame_rate = row['frame_rate']
+            new_duration = int(round(float(duration))) if duration is not None else None
+            new_frame_rate = int(round(float(frame_rate))) if frame_rate is not None else None
+            duration_formatted = None
+            if new_duration is not None:
+                hours = new_duration // 3600
+                minutes = (new_duration % 3600) // 60
+                seconds = new_duration % 60
+                duration_formatted = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            new_fingerprint = generate_file_fingerprint(
+                filename=row['filename'],
+                file_size=row['file_size'],
+                video_code=row['video_code'],
+            )
+            cursor.execute("""
+                UPDATE video_info
+                SET duration = ?, duration_formatted = ?, frame_rate = ?, file_fingerprint = ?, updated_time = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (new_duration, duration_formatted, new_frame_rate, new_fingerprint, row['id']))
+            updated += 1
+        self.connection.commit()
+        return {"rows_updated": updated}
     
     # ==================== Merge History 操作方法 ====================
     
@@ -1463,12 +1507,23 @@ class SQLiteStorage:
                         video_info.created_time = row['created_time']
                         video_info.width = int(row['width']) if row['width'] else None
                         video_info.height = int(row['height']) if row['height'] else None
-                        video_info.duration = float(row['duration']) if row['duration'] else None
+                        if row['duration']:
+                            video_info.duration = int(round(float(row['duration'])))
+                        else:
+                            video_info.duration = None
                         video_info.video_codec = row['video_codec'] if row['video_codec'] else None
                         video_info.audio_codec = row['audio_codec'] if row['audio_codec'] else None
                         video_info.file_size = int(row['file_size']) if row['file_size'] else None
                         video_info.bit_rate = int(row['bit_rate']) if row['bit_rate'] else None
-                        video_info.frame_rate = float(row['frame_rate']) if row.get('frame_rate') else None
+                        if row.get('frame_rate'):
+                            video_info.frame_rate = int(round(float(row['frame_rate'])))
+                        else:
+                            video_info.frame_rate = None
+                        video_info.file_fingerprint = generate_file_fingerprint(
+                            filename=video_info.filename,
+                            file_size=video_info.file_size,
+                            video_code=video_info.video_code,
+                        )
                         
                         videos.append(video_info)
                     except (ValueError, KeyError):

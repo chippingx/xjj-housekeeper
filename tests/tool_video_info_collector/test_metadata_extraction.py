@@ -82,7 +82,7 @@ class TestVideoMetadataExtractor(unittest.TestCase):
         self.assertEqual(video_info.file_path, self.test_video_path)
         self.assertEqual(video_info.width, 1920)
         self.assertEqual(video_info.height, 1080)
-        self.assertEqual(video_info.duration, 120.5)
+        self.assertEqual(video_info.duration, 120)
         self.assertEqual(video_info.video_codec, "h264")
         self.assertEqual(video_info.audio_codec, "aac")
         self.assertEqual(video_info.file_size, 75000000)

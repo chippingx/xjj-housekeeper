@@ -26,7 +26,7 @@ sys.path.insert(0, str(project_root))
 
 from tools.video_info_collector.cli import cli_main
 from tools.video_info_collector.sqlite_storage import SQLiteStorage
-from tools.video_info_collector.metadata import VideoInfo
+from tools.video_info_collector.metadata import VideoInfo, generate_file_fingerprint
 
 
 class TestMergeIntegration(unittest.TestCase):
@@ -129,6 +129,44 @@ class TestMergeIntegration(unittest.TestCase):
         self.assertTrue(any(code in expected_codes for code in video_codes), 
                        f"应该包含预期的视频代码，实际找到: {video_codes}")
     
+    def test_update_path_persists_with_enhanced_scanner(self):
+        """测试通过增强扫描器识别文件移动并持久化更新路径"""
+        from tools.video_info_collector.enhanced_scanner import EnhancedVideoScanner
+        
+        # 准备初始目录并插入一条记录
+        initial_dir = os.path.join(self.temp_dir, "origin")
+        os.makedirs(initial_dir, exist_ok=True)
+        src_path = os.path.join(initial_dir, "TST-111.mp4")
+        with open(src_path, 'wb') as f:
+            f.write(b'video data' * 2000)  # >10KB
+        
+        scanner = EnhancedVideoScanner(self.storage)
+        scanner.full_scan(initial_dir, recursive=True)
+        
+        # 验证初始插入
+        row = self.storage.get_video_info_by_path(src_path)
+        self.assertIsNotNone(row, "初始路径记录不存在")
+        self.assertEqual(row['file_path'], src_path)
+        
+        # 移动到新目录后再次维护
+        new_dir = os.path.join(self.temp_dir, "moved")
+        os.makedirs(new_dir, exist_ok=True)
+        dst_path = os.path.join(new_dir, "TST-111.mp4")
+        os.rename(src_path, dst_path)
+        
+        scanner.full_scan(new_dir, recursive=True)
+        
+        # 断言：数据库中该视频的路径已更新为新目录
+        # 通过 video_code 查询
+        rows = self.storage.search_videos_by_video_codes(['TST-111'])
+        self.assertTrue(rows, "未找到TST-111记录")
+        # 再查 video_info 表中该文件名的所有记录，确保只有一条且路径为新路径
+        cursor = self.storage.connection.cursor()
+        cursor.execute("SELECT id, file_path FROM video_info WHERE filename = 'TST-111.mp4'")
+        results = cursor.fetchall()
+        self.assertEqual(len(results), 1, "应当只有一条记录")
+        self.assertEqual(results[0]['file_path'], dst_path, "路径未更新为新目录")
+    
     def test_skip_duplicate_scenario(self):
         """测试skip_duplicate场景：重复视频跳过"""
         # 先插入一些视频到数据库
@@ -137,6 +175,8 @@ class TestMergeIntegration(unittest.TestCase):
         
         self.storage.insert_video_info(video1)
         self.storage.insert_video_info(video2)
+        self.storage.upsert_master_list_entry("ABC-123")
+        self.storage.upsert_master_list_entry("DEF-456")
         
         # 创建相同的CSV数据（匹配CSVWriter的fieldnames格式）
         csv_data = [
@@ -158,8 +198,8 @@ class TestMergeIntegration(unittest.TestCase):
         
         # 检查merge_history表
         merge_events = self.storage.get_merge_history()
-        skip_events = [e for e in merge_events if e['event_type'] == 'skip_duplicate']
-        self.assertEqual(len(skip_events), 2, "应该有2个skip_duplicate事件")
+        update_events = [e for e in merge_events if e['event_type'] == 'update_path']
+        self.assertEqual(len(update_events), 2, "应该有2个update_path事件")
         
         # 检查video_master_list表没有增加
         master_list = self.storage.get_all_videos()
@@ -170,6 +210,13 @@ class TestMergeIntegration(unittest.TestCase):
         # 先插入视频到数据库（使用旧路径）
         old_path = os.path.join(self.temp_dir, "old_location", "ABC-123.mp4")
         video1 = self._create_video_info(old_path, "ABC-123", "fp_video1")
+        created_time = datetime.fromisoformat("2024-01-01T12:00:00")
+        video1.created_time = created_time
+        video1.file_fingerprint = generate_file_fingerprint(
+            filename=video1.filename,
+            file_size=video1.file_size,
+            video_code=video1.video_code,
+        )
         self.storage.insert_video_info(video1)
         
         # 创建CSV数据（使用新路径，但相同的指纹和视频代码）
@@ -347,8 +394,8 @@ class TestMergeIntegration(unittest.TestCase):
         self.assertTrue(len(all_videos) >= 1, "应该至少有1个视频记录")
     
     def test_mark_replaced_scenario(self):
-        """测试文件替换检测场景"""
-        print("\n=== 测试文件替换检测场景 ===")
+        """测试同video_code不同指纹场景（不做替换推断）"""
+        print("\n=== 测试同video_code不同指纹场景 ===")
         
         # 创建两个不同的文件路径
         old_video_path = os.path.join(self.temp_dir, "old_ABC-123.mp4")
@@ -374,6 +421,7 @@ class TestMergeIntegration(unittest.TestCase):
         
         video_id = self.storage.insert_video_info(old_video)
         self.assertIsNotNone(video_id)
+        self.storage.upsert_master_list_entry("ABC-123")
         
         # 创建CSV数据，包含同一个video_code但不同fingerprint和路径的新版本（更高质量）
         # 注意：文件名必须包含video_code，这样才能正确提取
@@ -389,7 +437,7 @@ class TestMergeIntegration(unittest.TestCase):
         result = cli_main(['--merge', csv_path, '--database', self.db_path, '--force'])
         self.assertEqual(result, 0)
 
-        # 检查merge history中的替换事件
+        # 检查merge history不应出现替换事件
         merge_history = self.storage.get_merge_history()
         replaced_events = [event for event in merge_history if event['event_type'] == 'mark_replaced']
         print(f"Mark replaced events: {len(replaced_events)}")
@@ -408,35 +456,30 @@ class TestMergeIntegration(unittest.TestCase):
             else:
                 print(f"  Video: {video.video_code}, path: {video.file_path}, fingerprint: {video.file_fingerprint}")
 
-        # 应该有1个替换事件
-        self.assertEqual(len(replaced_events), 1, "应该有1个mark_replaced事件")
+        # 不应有替换事件
+        self.assertEqual(len(replaced_events), 0, "不应出现mark_replaced事件")
         
         # 验证数据库状态
         all_videos = self.storage.get_all_videos()
         print(f"Total videos in database: {len(all_videos)}")
         
-        # 检查旧文件是否被标记为REPLACED
-        replaced_videos = [v for v in all_videos if v.get('file_status') == 'replaced']
-        active_videos = [v for v in all_videos if v.get('file_status') != 'replaced']
+        # 不做替换推断，两个记录均为present
+        present_videos = [v for v in all_videos if v.get('file_status') == 'present']
+        print(f"Present videos: {len(present_videos)}")
+        self.assertEqual(len(present_videos), 2, "应该有2个present视频")
         
-        print(f"Replaced videos: {len(replaced_videos)}")
-        print(f"Active videos: {len(active_videos)}")
-        
-        self.assertEqual(len(replaced_videos), 1, "应该有1个被替换的视频")
-        self.assertEqual(len(active_videos), 1, "应该有1个活跃的视频")
-        
-        # 验证新视频的质量更高
-        new_video = active_videos[0]
+        # 验证新视频的元数据被正确写入
+        new_video = next(v for v in present_videos if v.get('file_path') == new_video_path)
         self.assertEqual(new_video['video_code'], 'ABC-123')  # 这里是video_info表，保持video_code
         self.assertEqual(new_video['width'], 1920)
         self.assertEqual(new_video['height'], 1080)
         self.assertEqual(new_video['video_codec'], 'h265')
         
-        # 验证video_master_list的计数正确（应该只计算活跃的文件）
+        # 验证video_master_list的计数正确（只统计present）
         master_list = self.storage.get_all_master_list()
         abc_123_entry = next((entry for entry in master_list if entry['video_code'] == 'ABC-123'), None)  # master_list表使用video_code字段
         self.assertIsNotNone(abc_123_entry, "应该有ABC-123的master list条目")
-        self.assertEqual(abc_123_entry['file_count'], 1, "file_count应该是1（不包括被替换的文件）")
+        self.assertEqual(abc_123_entry['file_count'], 2, "file_count应该是2")
 
 
 if __name__ == '__main__':
