@@ -1,8 +1,8 @@
 #!/bin/bash
-# 打开已打包的 .app（默认路径 dist/XJJ-Housekeeper.app）
+# 打开已打包的 .app（默认路径 dist/千姫の居所.app）
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )"
-APP_PATH="$SCRIPT_DIR/dist/XJJ-Housekeeper.app"
+APP_PATH="$SCRIPT_DIR/dist/千姫の居所.app"
 
 if [ -d "$APP_PATH" ]; then
   echo "🖱️ 打开：$APP_PATH"

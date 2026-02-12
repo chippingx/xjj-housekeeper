@@ -24,47 +24,19 @@ if ! poetry run pyinstaller --version &> /dev/null; then
   poetry add --group dev pyinstaller || { echo "❌ PyInstaller 安装失败"; read -p "按回车关闭..."; exit 1; }
 fi
 
-ICON_PATH="assets/icons/xjj.icns"
-NAME="XJJ-Housekeeper"
-
-EXTRA_ICON_ARG=""
-if [ -f "$ICON_PATH" ]; then
-  EXTRA_ICON_ARG="--icon $ICON_PATH"
-  echo "🎨 使用图标：$ICON_PATH"
-else
-  echo "ℹ️ 未找到图标文件（$ICON_PATH），将使用默认图标。"
-fi
-
-ADD_DATA_ARGS=()
-if [ -d "i18n" ]; then
-  ADD_DATA_ARGS+=(--add-data "i18n:i18n")
-fi
-if [ -d "output" ]; then
-  ADD_DATA_ARGS+=(--add-data "output:output")
-fi
-if [ -f "config/app_meta.json" ]; then
-  ADD_DATA_ARGS+=(--add-data "config/app_meta.json:config")
-fi
-if [ -f "tools/video_info_collector/config.yaml" ]; then
-  ADD_DATA_ARGS+=(--add-data "tools/video_info_collector/config.yaml:tools/video_info_collector")
-fi
-if [ -f "tools/filename_formatter/rename_rules.yaml" ]; then
-  ADD_DATA_ARGS+=(--add-data "tools/filename_formatter/rename_rules.yaml:tools/filename_formatter")
-fi
-
 echo "🛠️ 开始打包..."
-poetry run pyinstaller \
-  --noconfirm \
-  --windowed \
-  --onefile \
-  --name "$NAME" \
-  $EXTRA_ICON_ARG \
-  "${ADD_DATA_ARGS[@]}" \
-  ui/tkinter/app.py || { echo "❌ 打包失败"; read -p "按回车关闭..."; exit 1; }
+# 使用 .spec 文件进行打包，确保配置（如图标）生效
+poetry run pyinstaller XJJ-Housekeeper.spec --noconfirm || { echo "❌ 打包失败"; read -p "按回车关闭..."; exit 1; }
 
-APP_PATH="dist/$NAME"
-if [ -f "$APP_PATH" ]; then
+APP_PATH="dist/千姫の居所.app"
+if [ -d "$APP_PATH" ]; then
   echo "✅ 打包成功：$APP_PATH"
+  
+  # 清理中间产物目录（用户只想要 .app）
+  if [ -d "dist/千姫の居所" ]; then
+    echo "🧹 清理临时构建目录..."
+    rm -rf "dist/千姫の居所"
+  fi
 else
   echo "❌ 未找到打包产物，请检查输出"
 fi

@@ -5,7 +5,7 @@ from tools.path_utils import get_config_path
 
 class AppSettings:
     DEFAULT_SETTINGS = {
-        "app_title": "小姐姐の管家",
+        "app_title": "千姫の居所",
         "tags": [],
         "page_size": 20,
         "visible_columns": ["video", "actress", "tags", "file_path", "file_size", "duration", "resolution", "updated_time", "preference"],
@@ -67,7 +67,7 @@ class AppSettings:
 
     @property
     def app_title(self):
-        return self._settings.get("app_title", "小姐姐の管家")
+        return self._settings.get("app_title", "千姫の居所")
 
     @app_title.setter
     def app_title(self, value):

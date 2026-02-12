@@ -59,7 +59,7 @@ except ImportError:
     class AppSettings:
         def __init__(self): pass
         @property
-        def app_title(self): return "小姐姐の管家"
+        def app_title(self): return "千姫の居所"
         @app_title.setter
         def app_title(self, v): pass
         @property
