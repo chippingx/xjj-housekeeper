@@ -7,6 +7,10 @@ import os
 import json
 from datetime import datetime
 import time
+try:
+    import yaml
+except Exception:
+    yaml = None
 
 if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
     PROJECT_ROOT = Path(sys._MEIPASS).resolve()
@@ -296,6 +300,53 @@ class XJJDesktopApp:
         except Exception:
             pass
         return defaults
+
+    def _get_rename_rules_path(self) -> Path:
+        return get_config_path("output/video_info_collector/conf/rename_rules.yaml", calling_file=__file__)
+
+    def _load_rename_rules_config(self) -> tuple[list[dict], dict, Path]:
+        rules: list[dict] = []
+        settings: dict = {}
+        path = self._get_rename_rules_path()
+        if yaml is None:
+            return rules, settings, path
+        if path.exists():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+                rules = list(data.get("rename_rules", []) or [])
+                settings = data.get("settings", {}) or {}
+                if not isinstance(settings, dict):
+                    settings = {}
+            except Exception:
+                rules = []
+                settings = {}
+        return rules, settings, path
+
+    def _save_rename_rules_config(self, rules: list[dict], settings: dict | None = None) -> bool:
+        if yaml is None:
+            return False
+        path = self._get_rename_rules_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        clean_rules = []
+        for rule in rules:
+            if not isinstance(rule, dict):
+                continue
+            pattern = str(rule.get("pattern", "")).strip()
+            if not pattern:
+                continue
+            replace = rule.get("replace", "")
+            clean_rules.append({"pattern": pattern, "replace": "" if replace is None else str(replace)})
+        cfg_settings = settings if isinstance(settings, dict) else {}
+        if not cfg_settings:
+            cfg_settings = {"video_extensions": [".mp4", ".mkv", ".mov"], "min_file_size_bytes": 104857600}
+        data = {"settings": cfg_settings, "rename_rules": clean_rules}
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
+            return True
+        except Exception:
+            return False
 
     def _init_styles(self) -> None:
         style = ttk.Style()
@@ -2160,6 +2211,115 @@ class XJJDesktopApp:
         self._make_action_button(btn_frame, text=self.t("settings.tags_update"), command=update_tag).pack(side=tk.LEFT, padx=5)
         self._make_action_button(btn_frame, text=self.t("settings.tags_delete"), command=delete_tag).pack(side=tk.LEFT, padx=5)
 
+        tk.Frame(form, height=1, bg=self.colors["gray200"]).pack(fill=tk.X, padx=20, pady=15)
+        tk.Label(form, text=self.t("settings.rename_rules_section"), bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 14, "bold")).pack(anchor="w", padx=20, pady=(0, 8))
+
+        rules_frame = tk.Frame(form, bg=self.colors["bg"])
+        rules_frame.pack(fill=tk.X, padx=20)
+
+        self._rename_rules, self._rename_rules_settings, _ = self._load_rename_rules_config()
+        normalized_rules = []
+        for rule in self._rename_rules:
+            if not isinstance(rule, dict):
+                continue
+            pattern = str(rule.get("pattern", "")).strip()
+            if not pattern:
+                continue
+            replace = rule.get("replace", "")
+            normalized_rules.append({"pattern": pattern, "replace": "" if replace is None else str(replace)})
+        self._rename_rules = normalized_rules
+        self._rename_rules_original = [dict(r) for r in self._rename_rules]
+
+        tk.Label(rules_frame, text=self.t("settings.rename_rule_select"), bg=self.colors["bg"]).grid(row=0, column=0, sticky="w", pady=5)
+        self.rename_rules_cb = ttk.Combobox(rules_frame, width=40, state="readonly")
+        self.rename_rules_cb.grid(row=0, column=1, sticky="w", padx=10, pady=5)
+
+        tk.Label(rules_frame, text=self.t("settings.rename_rule_pattern"), bg=self.colors["bg"]).grid(row=1, column=0, sticky="w", pady=5)
+        self.rename_rule_pattern_var = tk.StringVar()
+        pattern_entry_container, pattern_entry = self._create_styled_entry(rules_frame, textvariable=self.rename_rule_pattern_var, width=42, font=self.fonts["base"])
+        pattern_entry_container.grid(row=1, column=1, sticky="w", padx=10, pady=5)
+        self._attach_entry_context_menu(pattern_entry)
+
+        tk.Label(rules_frame, text=self.t("settings.rename_rule_replace"), bg=self.colors["bg"]).grid(row=2, column=0, sticky="w", pady=5)
+        self.rename_rule_replace_var = tk.StringVar()
+        replace_entry_container, replace_entry = self._create_styled_entry(rules_frame, textvariable=self.rename_rule_replace_var, width=42, font=self.fonts["base"])
+        replace_entry_container.grid(row=2, column=1, sticky="w", padx=10, pady=5)
+        self._attach_entry_context_menu(replace_entry)
+
+        rules_btn_frame = tk.Frame(rules_frame, bg=self.colors["bg"])
+        rules_btn_frame.grid(row=3, column=1, sticky="w", padx=10, pady=10)
+
+        def refresh_rules_ui(select_val=None):
+            self._rename_rules = [r for r in self._rename_rules if r.get("pattern")]
+            values = [r.get("pattern", "") for r in self._rename_rules if r.get("pattern")]
+            self.rename_rules_cb.configure(values=values)
+            if select_val:
+                self.rename_rules_cb.set(select_val)
+                self.rename_rule_pattern_var.set(select_val)
+                replace_val = ""
+                for r in self._rename_rules:
+                    if r.get("pattern") == select_val:
+                        replace_val = r.get("replace", "")
+                        break
+                self.rename_rule_replace_var.set(replace_val)
+            else:
+                self.rename_rules_cb.set("")
+                self.rename_rule_pattern_var.set("")
+                self.rename_rule_replace_var.set("")
+            check_changes()
+            mark_settings_scroll_dirty()
+
+        def on_rule_select(event):
+            selected = self.rename_rules_cb.get()
+            if selected:
+                self.rename_rule_pattern_var.set(selected)
+                for r in self._rename_rules:
+                    if r.get("pattern") == selected:
+                        self.rename_rule_replace_var.set(r.get("replace", ""))
+                        break
+
+        self.rename_rules_cb.bind("<<ComboboxSelected>>", on_rule_select)
+
+        def add_rule():
+            pattern = self.rename_rule_pattern_var.get().strip()
+            replace = self.rename_rule_replace_var.get()
+            if not pattern:
+                messagebox.showwarning(self.t("message.title.tip"), self.t("settings.rename_rule_pattern_required"))
+                return
+            if any(r.get("pattern") == pattern for r in self._rename_rules):
+                messagebox.showwarning(self.t("message.title.tip"), self.t("settings.rename_rule_exists"))
+                return
+            self._rename_rules.append({"pattern": pattern, "replace": "" if replace is None else replace})
+            refresh_rules_ui(select_val=pattern)
+
+        def update_rule():
+            old_val = self.rename_rules_cb.get()
+            if not old_val:
+                return
+            pattern = self.rename_rule_pattern_var.get().strip()
+            replace = self.rename_rule_replace_var.get()
+            if not pattern:
+                messagebox.showwarning(self.t("message.title.tip"), self.t("settings.rename_rule_pattern_required"))
+                return
+            if pattern != old_val and any(r.get("pattern") == pattern for r in self._rename_rules):
+                messagebox.showwarning(self.t("message.title.tip"), self.t("settings.rename_rule_target_exists"))
+                return
+            for idx, rule in enumerate(self._rename_rules):
+                if rule.get("pattern") == old_val:
+                    self._rename_rules[idx] = {"pattern": pattern, "replace": "" if replace is None else replace}
+                    break
+            refresh_rules_ui(select_val=pattern)
+
+        def delete_rule():
+            val = self.rename_rules_cb.get()
+            if val:
+                self._rename_rules = [r for r in self._rename_rules if r.get("pattern") != val]
+                refresh_rules_ui(select_val=None)
+
+        self._make_action_button(rules_btn_frame, text=self.t("settings.rename_rule_add"), command=add_rule).pack(side=tk.LEFT, padx=(0, 5))
+        self._make_action_button(rules_btn_frame, text=self.t("settings.rename_rule_update"), command=update_rule).pack(side=tk.LEFT, padx=5)
+        self._make_action_button(rules_btn_frame, text=self.t("settings.rename_rule_delete"), command=delete_rule).pack(side=tk.LEFT, padx=5)
+
         # Save Settings Logic
         tk.Frame(form, height=1, bg=self.colors["gray200"]).pack(fill=tk.X, padx=20, pady=20)
         
@@ -2199,15 +2359,30 @@ class XJJDesktopApp:
             current_cols.sort(key=lambda x: default_order.index(x) if x in default_order else 999)
             
             cols_changed = current_cols != self.settings.visible_columns
-            
-            if title_changed or tags_changed or size_changed or cols_changed or language_changed:
+
+            current_rules = [
+                {"pattern": str(r.get("pattern", "")).strip(), "replace": "" if r.get("replace", "") is None else str(r.get("replace", ""))}
+                for r in self._rename_rules
+                if str(r.get("pattern", "")).strip()
+            ]
+            original_rules = [
+                {"pattern": str(r.get("pattern", "")).strip(), "replace": "" if r.get("replace", "") is None else str(r.get("replace", ""))}
+                for r in self._rename_rules_original
+                if str(r.get("pattern", "")).strip()
+            ]
+            rules_changed = current_rules != original_rules
+
+            if title_changed or tags_changed or size_changed or cols_changed or language_changed or rules_changed:
                 self.btn_save_settings.configure(fg="blue", text=f"{save_label}*")
             else:
                 self.btn_save_settings.configure(fg="black", text=save_label)
         
+        refresh_rules_ui()
         self.settings_title_var.trace("w", check_changes)
         self.settings_page_size_var.trace("w", check_changes)
         self.settings_language_var.trace("w", check_changes)
+        self.rename_rule_pattern_var.trace("w", check_changes)
+        self.rename_rule_replace_var.trace("w", check_changes)
         for var in self.column_vars.values():
             var.trace("w", check_changes)
             
@@ -2265,6 +2440,12 @@ class XJJDesktopApp:
             self.settings.tags = self._current_tags
             
             self.settings.save_settings()
+
+            rules_saved = self._save_rename_rules_config(self._rename_rules, self._rename_rules_settings)
+            if rules_saved:
+                self._rename_rules_original = [dict(r) for r in self._rename_rules]
+            else:
+                messagebox.showwarning(self.t("message.title.error"), self.t("settings.rename_rules_save_failed"))
             
             language_changed = previous_language != new_language
             if language_changed:
