@@ -1,7 +1,7 @@
 #!/bin/bash
-# 打包 Tkinter 桌面应用为 macOS .app（PyInstaller）
+# 打包 Tkinter 桌面应用为 macOS 单文件（PyInstaller）
 
-echo "📦 打包 XJJ 桌面应用 (.app)"
+echo "📦 打包 XJJ 桌面应用（单文件）"
 echo "============================="
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )"
@@ -35,18 +35,36 @@ else
   echo "ℹ️ 未找到图标文件（$ICON_PATH），将使用默认图标。"
 fi
 
+ADD_DATA_ARGS=()
+if [ -d "i18n" ]; then
+  ADD_DATA_ARGS+=(--add-data "i18n:i18n")
+fi
+if [ -d "output" ]; then
+  ADD_DATA_ARGS+=(--add-data "output:output")
+fi
+if [ -f "config/app_meta.json" ]; then
+  ADD_DATA_ARGS+=(--add-data "config/app_meta.json:config")
+fi
+if [ -f "tools/video_info_collector/config.yaml" ]; then
+  ADD_DATA_ARGS+=(--add-data "tools/video_info_collector/config.yaml:tools/video_info_collector")
+fi
+if [ -f "tools/filename_formatter/rename_rules.yaml" ]; then
+  ADD_DATA_ARGS+=(--add-data "tools/filename_formatter/rename_rules.yaml:tools/filename_formatter")
+fi
+
 echo "🛠️ 开始打包..."
 poetry run pyinstaller \
   --noconfirm \
   --windowed \
+  --onefile \
   --name "$NAME" \
   $EXTRA_ICON_ARG \
+  "${ADD_DATA_ARGS[@]}" \
   ui/tkinter/app.py || { echo "❌ 打包失败"; read -p "按回车关闭..."; exit 1; }
 
-APP_PATH="dist/$NAME.app"
-if [ -d "$APP_PATH" ]; then
+APP_PATH="dist/$NAME"
+if [ -f "$APP_PATH" ]; then
   echo "✅ 打包成功：$APP_PATH"
-  open "$APP_PATH"
 else
   echo "❌ 未找到打包产物，请检查输出"
 fi

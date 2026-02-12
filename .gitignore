@@ -11,3 +11,5 @@ output/
 integration_test_temp
 tools/movie_data_capture/impl/
 *.pyc
+dist
+build
