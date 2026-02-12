@@ -168,16 +168,19 @@ class XJJDesktopApp:
             "gray200": "#E5E7EB",
             "gray700": "#374151",
             "gray800": "#1F2937",
-            "brand": "#2563EB",
-            "accent": "#60A5FA",
-            "selected_bg": "#EEF2FF",
-            "selected_border": "#C7D2FE",
-            # 侧边栏样式调整：改为浅色清爽风格
-            "sidebar_bg": "#FFFFFF",      # 纯白背景
+            # 更新品牌色：从 #2563EB (Bright Blue) 改为 #0F172A (Dark Slate/Black) 或 #1E293B (Deep Navy)
+            # 这里选择 Deep Navy 风格，显得更专业沉稳，配合白色文字
+            "brand": "#1E293B",  # 类似 GitHub Dark 或 VS Code 侧边栏的深色
+            "accent": "#334155",  # 辅助色
+            "selected_bg": "#E2E8F0",  # 列表选中背景：淡蓝灰
+            "selected_fg": "#1E293B",  # 列表选中文字：使用品牌色
+            "selected_border": "#CBD5E1",
+            # 侧边栏样式调整
+            "sidebar_bg": "#F8F9FA",      # 极浅灰背景
             "sidebar_fg": "#4B5563",      # 深灰文字
-            "sidebar_hover": "#F3F4F6",   # 悬停浅灰
-            "sidebar_active": "#EFF6FF",  # 选中浅蓝背景
-            "sidebar_active_fg": "#2563EB", # 选中品牌蓝文字
+            "sidebar_hover": "#E5E7EB",   # 悬停稍深灰
+            "sidebar_active": "#E2E8F0",  # 选中背景：淡蓝灰
+            "sidebar_active_fg": "#1E293B", # 选中文字：使用品牌色
         }
 
         self._last_scan_dir: str | None = None
@@ -300,23 +303,58 @@ class XJJDesktopApp:
             style.theme_use("clam")
         except Exception:
             pass
+            
+        # 字体配置（跨平台优化）
+        system = self.root.tk.call("tk", "windowingsystem")
+        if system == "aqua":  # macOS
+            base_font = ("San Francisco", 13)
+            bold_font = ("San Francisco", 13, "bold")
+            title_font = ("San Francisco", 18, "bold")
+            mono_font = ("Menlo", 12)
+        elif system == "win32":  # Windows
+            base_font = ("Microsoft YaHei UI", 10)
+            bold_font = ("Microsoft YaHei UI", 10, "bold")
+            title_font = ("Microsoft YaHei UI", 14, "bold")
+            mono_font = ("Consolas", 10)
+        else:  # Linux/Other
+            base_font = ("Helvetica", 11)
+            bold_font = ("Helvetica", 11, "bold")
+            title_font = ("Helvetica", 16, "bold")
+            mono_font = ("Courier", 11)
+            
+        self.fonts = {
+            "base": base_font,
+            "bold": bold_font,
+            "title": title_font,
+            "mono": mono_font,
+            "small": (base_font[0], base_font[1] - 2),
+            "link": (base_font[0], base_font[1] - 1)
+        }
+
         # 表格样式
         style.configure(
             "Treeview",
             background=self.colors["white"],
             fieldbackground=self.colors["white"],
             foreground=self.colors["gray800"],
-            rowheight=32,
+            rowheight=44,  # 进一步增加行高，提升呼吸感
+            font=self.fonts["base"],
+            borderwidth=0
         )
         style.configure(
             "Treeview.Heading",
-            background=self.colors["gray100"],
-            foreground=self.colors["gray800"],
+            background=self.colors["bg"],  # 浅灰背景
+            foreground=self.colors["gray700"],
             relief=tk.FLAT,
-            font=("Helvetica", 13, "bold"),
-            padding=(10, 8)
+            font=self.fonts["bold"],
+            padding=(16, 12)  # 增加水平内边距
         )
-        style.map("Treeview", background=[("selected", self.colors["brand"])], foreground=[("selected", self.colors["white"])])
+        # 选中态样式：不再使用深色背景+白字，而是使用浅色背景+深色文字+左侧指示条（模拟）
+        # 这里仅能配置背景和文字颜色
+        style.map("Treeview", 
+            background=[("selected", self.colors["selected_bg"])], 
+            foreground=[("selected", self.colors["selected_fg"])]
+        )
 
         style.configure("Blue.Horizontal.TProgressbar", troughcolor=self.colors["gray100"], background=self.colors["brand"])
         style.configure("TNotebook", background=self.colors["bg"], borderwidth=0)
@@ -324,14 +362,14 @@ class XJJDesktopApp:
             "TNotebook.Tab",
             background=self.colors["gray200"],
             foreground=self.colors["gray700"],
-            padding=(20, 10),
-            font=("Helvetica", 14),
+            padding=(24, 12),  # 增加 Tab 间距
+            font=self.fonts["base"],
         )
         style.map(
             "TNotebook.Tab",
             background=[("selected", self.colors["bg"])],
-            foreground=[("selected", "black")],
-            padding=[("selected", (20, 10))],
+            foreground=[("selected", self.colors["brand"])],  # 选中文字使用品牌色
+            padding=[("selected", (24, 12))],
         )
 
         # Combobox style
@@ -342,6 +380,7 @@ class XJJDesktopApp:
             foreground=self.colors["gray800"],
             arrowcolor=self.colors["brand"],
             padding=5,
+            font=self.fonts["base"]
         )
         # On some themes/OS, fieldbackground must be set via map or different option
         style.map(
@@ -352,24 +391,117 @@ class XJJDesktopApp:
         )
 
     def _make_action_button(self, parent, text: str, command=None, **kwargs) -> tk.Button:
-        padx = kwargs.pop("padx", 20)
-        pady = kwargs.pop("pady", 5)
+        padx = kwargs.pop("padx", 24)
+        pady = kwargs.pop("pady", 10)
+        
+        # 默认样式配置（次级按钮）
+        bg = kwargs.pop("bg", self.colors["white"])
+        fg = kwargs.pop("fg", self.colors["gray800"])
+        activebg = kwargs.pop("activebackground", self.colors["gray100"])
+        activefg = kwargs.pop("activeforeground", self.colors["gray800"])
+        
+        # 检查是否为主按钮（通过 bg 参数判断是否使用品牌色）
+        is_primary = bg == self.colors["brand"]
+        if is_primary:
+            fg = self.colors["white"]
+            activebg = self.colors["accent"]
+            activefg = self.colors["white"]
+            
+        font = kwargs.pop("font", self.fonts["base"])
+        
         btn = tk.Button(
             parent,
             text=text,
             command=command,
-            bg=self.colors["white"],
-            fg="black",
+            bg=bg,
+            fg=fg,
+            font=font,
             relief=tk.FLAT,
             bd=0,
             highlightthickness=0,
-            activebackground=self.colors["gray100"],
-            activeforeground="black",
+            activebackground=activebg,
+            activeforeground=activefg,
             padx=padx,
             pady=pady,
+            cursor="hand2",
             **kwargs
         )
         return btn
+
+    def _style_entry(self, entry: tk.Entry):
+        """统一输入框样式"""
+        entry.configure(
+            relief=tk.FLAT,
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=self.colors["gray200"],
+            highlightcolor=self.colors["brand"],
+            bg=self.colors["white"],
+            fg=self.colors["gray800"],
+            insertbackground=self.colors["gray800"]  # 光标颜色
+        )
+        # Tkinter Entry doesn't support internal padding directly.
+        # We can't change it to ttk.Entry easily without refactoring everything.
+        # However, we can use a border trick or accept that ipady helps.
+        # For left padding, unfortunately tk.Entry is limited.
+        # But user insists on padding.
+        # Let's try to add a small borderwidth with flat relief? No, that doesn't help text pos.
+        # Actually, we can use a wrapper frame if we want perfect padding, but that's invasive.
+        # Let's try to use `ttk.Entry` style if possible? No, the code passes `entry` around.
+        # Wait, there is a trick: font with leading space? No.
+        # Actually, for `tk.Entry`, `bd` and `relief` are the only layout params.
+        # If we really need padding, we should wrap it.
+        # But given the user request, let's try to switch to ttk.Entry where possible
+        # or just add a margin via pack/grid? No, that's external.
+        
+        # NOTE: Since switching to ttk.Entry or wrapping is too risky for this stage,
+        # we will continue using tk.Entry but maybe increase the borderwidth slightly 
+        # with matching background to simulate padding? 
+        # No, tk.Entry border is outside.
+        
+        # Real solution: Convert to ttk.Entry where this is called, 
+        # or use a Frame wrapper.
+        # Let's try to use a Frame wrapper in _create_styled_entry helper instead.
+        pass
+
+    def _create_styled_entry(self, parent, **kwargs) -> tuple[tk.Frame, tk.Entry]:
+        """创建一个带内边距的输入框（通过Frame包裹实现）"""
+        # Extract pack/grid args if any? No, caller handles geometry.
+        # We return (container, entry)
+        
+        # Extract entry specific args
+        var = kwargs.pop("textvariable", None)
+        width = kwargs.pop("width", None)
+        font = kwargs.pop("font", self.fonts["base"])
+        fg = kwargs.pop("fg", self.colors["gray800"])
+        bg = kwargs.pop("bg", self.colors["white"])
+        
+        # Container (acts as border)
+        container = tk.Frame(
+            parent, 
+            bg=bg, 
+            highlightthickness=1, 
+            highlightbackground=self.colors["gray200"], 
+            highlightcolor=self.colors["brand"],
+            bd=0
+        )
+        
+        entry = tk.Entry(
+            container,
+            textvariable=var,
+            width=width,
+            font=font,
+            fg=fg,
+            bg=bg,
+            relief=tk.FLAT,
+            bd=0,
+            highlightthickness=0,
+            insertbackground=self.colors["gray800"],
+            **kwargs
+        )
+        entry.pack(fill=tk.BOTH, expand=True, padx=8, pady=6) # Simulated padding
+        
+        return container, entry
 
     def _build_layout(self) -> None:
         # 使用 Grid 布局：左侧边栏，右侧主内容
@@ -377,7 +509,7 @@ class XJJDesktopApp:
         self.root.grid_columnconfigure(1, weight=1)
 
         # 1. 侧边导航栏 (Sidebar)
-        self.sidebar = tk.Frame(self.root, bg=self.colors["sidebar_bg"], width=200)
+        self.sidebar = tk.Frame(self.root, bg=self.colors["sidebar_bg"], width=250)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
         self.sidebar.grid_propagate(False) # 固定宽度
 
@@ -386,9 +518,9 @@ class XJJDesktopApp:
             self.sidebar,
             text=self.settings.app_title,
             bg=self.colors["sidebar_bg"],
-            fg=self.colors["brand"],  # 标题改为品牌色
-            font=("Helvetica", 18, "bold"),
-            padx=20, pady=24
+            fg=self.colors["brand"],
+            font=self.fonts["title"],  # 使用系统字体
+            padx=28, pady=36  # 进一步增加留白
         )
         self.brand_label.pack(anchor="w")
 
@@ -399,26 +531,31 @@ class XJJDesktopApp:
 
         # 侧边栏底部：版本号链接
         version_text = self.app_meta.get("version", "V1.0")
+        
+        # 底部容器，增加视觉分割
+        bottom_frame = tk.Frame(self.sidebar, bg=self.colors["sidebar_bg"], padx=28, pady=28)
+        bottom_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        
         self.about_link = tk.Label(
-            self.sidebar,
+            bottom_frame,
             text=version_text,
             bg=self.colors["sidebar_bg"],
             fg=self.colors["gray700"],
-            font=("Helvetica", 10),
-            cursor="hand2",
-            padx=20, pady=20
+            font=self.fonts["link"],  # 使用稍大一点的字体
+            cursor="hand2"
         )
-        self.about_link.pack(side=tk.BOTTOM, anchor="w")
+        self.about_link.pack(anchor="w")
         self.about_link.bind("<Button-1>", lambda e: self._show_about())
 
         # 2. 主内容区域 (Main)
+        # 主区域背景保持浅灰，内容区通过卡片承载
         self.main_area = tk.Frame(self.root, bg=self.colors["bg"])
         self.main_area.grid(row=0, column=1, sticky="nsew")
         self.main_area.grid_rowconfigure(1, weight=1) # Row 1 是页面内容
         self.main_area.grid_columnconfigure(0, weight=1)
 
         # Header 区域 (Row 0)
-        self.header = tk.Frame(self.main_area, bg=self.colors["bg"], height=50)
+        self.header = tk.Frame(self.main_area, bg=self.colors["bg"], height=64)  # 增加高度
         self.header.grid(row=0, column=0, sticky="ew")
         self.header.pack_propagate(False)
 
@@ -427,7 +564,7 @@ class XJJDesktopApp:
         self.toggle_btn = tk.Button(
             self.header,
             text="☰",
-            font=("Helvetica", 16),
+            font=self.fonts["title"],  # 使用图标字体大小
             bg=self.colors["bg"],
             fg=self.colors["gray700"],
             bd=0,
@@ -436,7 +573,7 @@ class XJJDesktopApp:
             command=self._toggle_sidebar,
             cursor="hand2"
         )
-        self.toggle_btn.pack(side=tk.LEFT, padx=10, pady=5)
+        self.toggle_btn.pack(side=tk.LEFT, padx=24, pady=12)
 
 
     def _toggle_sidebar(self):
@@ -544,19 +681,20 @@ class XJJDesktopApp:
         ).pack(side=tk.BOTTOM, pady=10)
 
     def _add_sidebar_btn(self, key: str, text: str, command):
+        # 现代扁平化按钮样式
         btn = tk.Button(
             self.sidebar,
             text=text,
             bg=self.colors["sidebar_bg"],
             fg=self.colors["sidebar_fg"],
-            font=("Helvetica", 16),
+            font=self.fonts["base"],
             bd=0,
             relief=tk.FLAT,
             activebackground=self.colors["sidebar_hover"],
             activeforeground=self.colors["brand"],
-            anchor="center",
-            padx=20,
-            pady=10,
+            anchor="w",
+            padx=24,  # 增加内边距
+            pady=14,
             command=command,
             cursor="hand2"
         )
@@ -567,15 +705,15 @@ class XJJDesktopApp:
         for key, btn in self.nav_btns.items():
             if key == self.current_page:
                 btn.configure(
-                    bg="#D1D5DB", # Darker gray for selected (approx 30% darker than white)
-                    fg=self.colors["brand"],
-                    font=("Helvetica", 16, "bold")
+                    bg=self.colors["sidebar_active"],
+                    fg=self.colors["sidebar_active_fg"],
+                    font=self.fonts["bold"]
                 )
             else:
                 btn.configure(
                     bg=self.colors["sidebar_bg"],
                     fg=self.colors["sidebar_fg"],
-                    font=("Helvetica", 16, "normal")
+                    font=self.fonts["base"]
                 )
 
     def _init_pages(self) -> None:
@@ -621,7 +759,7 @@ class XJJDesktopApp:
         
         # 内容边距
         content = tk.Frame(container, bg=self.colors["bg"])
-        content.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        content.pack(fill=tk.BOTH, expand=True, padx=24, pady=24)
 
         # 搜索表单
         form = tk.Frame(content, bg=self.colors["bg"])
@@ -629,14 +767,14 @@ class XJJDesktopApp:
 
         self.query_placeholder = self.t("query.placeholder")
         self.query_var = tk.StringVar(value=self.query_placeholder)
-        entry = tk.Entry(form, textvariable=self.query_var, width=40, font=("Helvetica", 14))
-        entry.pack(side=tk.LEFT, padx=(0, 8), ipady=5)
+        entry_container, entry = self._create_styled_entry(form, textvariable=self.query_var, width=40, font=self.fonts["base"])
+        entry_container.pack(side=tk.LEFT, padx=(0, 8))
         self._attach_entry_context_menu(entry)
         self.query_entry = entry
 
         # 偏好筛选
         self.preference_var = tk.StringVar(value=self._preference_labels["all"])
-        pref_cb = ttk.Combobox(form, textvariable=self.preference_var, state="readonly", width=10, font=("Helvetica", 13))
+        pref_cb = ttk.Combobox(form, textvariable=self.preference_var, state="readonly", width=10, font=self.fonts["base"])
         pref_cb['values'] = (
             self._preference_labels["all"],
             self._preference_labels["like"],
@@ -644,7 +782,7 @@ class XJJDesktopApp:
             self._preference_labels["deleted"],
             self._preference_labels["none"]
         )
-        pref_cb.pack(side=tk.LEFT, padx=8, ipady=3)
+        pref_cb.pack(side=tk.LEFT, padx=8, ipady=6)  # 对应增加高度
 
         def _on_query_focus_in(_event):
             if self.query_var.get() == self.query_placeholder:
@@ -667,7 +805,7 @@ class XJJDesktopApp:
 
         # 结果表格
         table_container = tk.Frame(content, bg=self.colors["bg"])
-        table_container.pack(fill=tk.BOTH, expand=True, pady=12)
+        table_container.pack(fill=tk.BOTH, expand=True, pady=20)  # 增加垂直间距
         
         # Load columns from settings
         columns = tuple(self.settings.visible_columns)
@@ -679,19 +817,20 @@ class XJJDesktopApp:
         for col in columns:
             text = header_texts.get(col, col)
             table.heading(col, text=text, anchor="w" if col in left_cols else "e", command=lambda c=col: self._sort_table(table, c))
-            if col == "file_path": width = 280
-            elif col == "tags": width = 160
-            elif col == "actress": width = 120
-            elif col == "updated_time": width = 140
-            elif col == "preference": width = 80
+            if col == "file_path": width = 320  # 加宽路径列
+            elif col == "tags": width = 180
+            elif col == "actress": width = 140
+            elif col == "updated_time": width = 150
+            elif col == "preference": width = 100
             else: width = 120
             table.column(col, width=width, anchor="w" if col in left_cols else "e")
         
         table._header_texts = header_texts
         table._context_role = "query"
-        table.tag_configure("pref_like", background="#FEF3C7")
-        table.tag_configure("pref_dislike", background="#FEE2E2")
-        table.tag_configure("pref_deleted", background="#E5E7EB")
+        # 更新标签颜色以适配新背景
+        table.tag_configure("pref_like", background="#FEF3C7", foreground=self.colors["gray800"])
+        table.tag_configure("pref_dislike", background="#FEE2E2", foreground=self.colors["gray800"])
+        table.tag_configure("pref_deleted", background="#E5E7EB", foreground=self.colors["gray800"])
         
         # 滚动条
         vsb = ttk.Scrollbar(table_container, orient="vertical", command=table.yview)
@@ -962,7 +1101,7 @@ class XJJDesktopApp:
         container = tk.Frame(parent, bg=self.colors["bg"])
 
         notebook = ttk.Notebook(container)
-        notebook.pack(fill=tk.BOTH, expand=True, padx=20, pady=(20, 20))
+        notebook.pack(fill=tk.BOTH, expand=True, padx=24, pady=(24, 24))
 
         tab_frames = {
             "import": tk.Frame(notebook, bg=self.colors["bg"]),
@@ -1446,9 +1585,9 @@ class XJJDesktopApp:
         # Search input
         self.movie_info_placeholder = self.t("movie_info.placeholder")
         self.movie_info_keyword = tk.StringVar()
-        entry = tk.Entry(form, textvariable=self.movie_info_keyword, width=40, fg="gray", font=("Helvetica", 14))
+        entry_container, entry = self._create_styled_entry(form, textvariable=self.movie_info_keyword, width=40, fg="gray", font=self.fonts["base"])
         entry.insert(0, self.movie_info_placeholder)
-        entry.pack(side=tk.LEFT, padx=8, ipady=5)
+        entry_container.pack(side=tk.LEFT, padx=8)
         self._attach_entry_context_menu(entry)
 
         def on_entry_focus_in(event):
@@ -1647,10 +1786,10 @@ class XJJDesktopApp:
         form = tk.Frame(parent, bg=self.colors["bg"])
         form.pack(fill=tk.X, pady=10)
 
-        tk.Label(form, text=self.t("maintain.scan_path"), bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 12)).pack(side=tk.LEFT)
+        tk.Label(form, text=self.t("maintain.scan_path"), bg=self.colors["bg"], fg=self.colors["gray800"], font=self.fonts["base"]).pack(side=tk.LEFT)
         self.scan_dir_var = tk.StringVar()
-        entry = tk.Entry(form, textvariable=self.scan_dir_var, width=50, font=("Helvetica", 14))
-        entry.pack(side=tk.LEFT, padx=8, ipady=5)
+        entry_container, entry = self._create_styled_entry(form, textvariable=self.scan_dir_var, width=50, font=self.fonts["base"])
+        entry_container.pack(side=tk.LEFT, padx=8)
         self._attach_entry_context_menu(entry)
 
         def choose_dir():
@@ -1803,6 +1942,36 @@ class XJJDesktopApp:
         scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
         scrollable_frame = tk.Frame(canvas, bg=self.colors["bg"])
 
+        # Mouse wheel scrolling
+        def _on_mousewheel(event):
+            # Windows/macOS/Linux differences
+            if sys.platform == "darwin":
+                delta = -1 * event.delta
+            elif sys.platform.startswith("linux"):
+                if event.num == 4: delta = -1
+                elif event.num == 5: delta = 1
+                else: delta = 0
+            else: # Windows
+                delta = -1 * (event.delta // 120)
+            
+            canvas.yview_scroll(int(delta), "units")
+
+        def _bind_mousewheel(event):
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            canvas.bind_all("<Button-4>", _on_mousewheel)
+            canvas.bind_all("<Button-5>", _on_mousewheel)
+
+        def _unbind_mousewheel(event):
+            canvas.unbind_all("<MouseWheel>")
+            canvas.unbind_all("<Button-4>")
+            canvas.unbind_all("<Button-5>")
+
+        # Bind enter/leave events to the scrollable area
+        scrollable_frame.bind("<Enter>", _bind_mousewheel)
+        scrollable_frame.bind("<Leave>", _unbind_mousewheel)
+        canvas.bind("<Enter>", _bind_mousewheel)
+        canvas.bind("<Leave>", _unbind_mousewheel)
+
         def update_scrollregion():
             self._settings_scroll_job = None
             if not getattr(self, "_settings_scroll_dirty", True):
@@ -1842,33 +2011,33 @@ class XJJDesktopApp:
         
         # Title Setting
         # 加大字体
-        tk.Label(form, text=self.t("settings.app_title"), bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 14, "bold")).pack(anchor="w", padx=20, pady=(0, 8))
+        tk.Label(form, text=self.t("settings.app_title"), bg=self.colors["bg"], fg=self.colors["gray800"], font=self.fonts["bold"]).pack(anchor="w", padx=20, pady=(0, 8))
         
         self.settings_title_var = tk.StringVar(value=self.settings.app_title)
-        title_entry = tk.Entry(form, textvariable=self.settings_title_var, width=50, font=("Helvetica", 14))
-        title_entry.pack(anchor="w", padx=20, pady=(0, 15), ipady=5)
+        title_entry_container, title_entry = self._create_styled_entry(form, textvariable=self.settings_title_var, width=50, font=self.fonts["base"])
+        title_entry_container.pack(anchor="w", padx=20, pady=(0, 15))
         self._attach_entry_context_menu(title_entry)
 
-        tk.Label(form, text=self.t("settings.language"), bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 14, "bold")).pack(anchor="w", padx=20, pady=(0, 8))
+        tk.Label(form, text=self.t("settings.language"), bg=self.colors["bg"], fg=self.colors["gray800"], font=self.fonts["bold"]).pack(anchor="w", padx=20, pady=(0, 8))
         self.settings_language_var = tk.StringVar(value=self._language_labels.get(self.settings.language, self._language_labels["zh_CN"]))
-        language_cb = ttk.Combobox(form, textvariable=self.settings_language_var, width=16, state="readonly", font=("Helvetica", 12))
+        language_cb = ttk.Combobox(form, textvariable=self.settings_language_var, width=16, state="readonly", font=self.fonts["base"])
         language_cb["values"] = tuple(self._language_labels.values())
-        language_cb.pack(anchor="w", padx=20, pady=(0, 15), ipady=3)
+        language_cb.pack(anchor="w", padx=20, pady=(0, 15), ipady=6)
         
         # Page Size Setting
         tk.Frame(form, height=1, bg=self.colors["gray200"]).pack(fill=tk.X, padx=20, pady=15)
-        tk.Label(form, text=self.t("settings.query_section"), bg=self.colors["bg"], fg=self.colors["gray800"], font=("Helvetica", 14, "bold")).pack(anchor="w", padx=20, pady=(0, 8))
+        tk.Label(form, text=self.t("settings.query_section"), bg=self.colors["bg"], fg=self.colors["gray800"], font=self.fonts["bold"]).pack(anchor="w", padx=20, pady=(0, 8))
         
         size_frame = tk.Frame(form, bg=self.colors["bg"])
         size_frame.pack(anchor="w", padx=20)
-        tk.Label(size_frame, text=self.t("settings.page_size"), bg=self.colors["bg"], font=("Helvetica", 12)).pack(side=tk.LEFT)
+        tk.Label(size_frame, text=self.t("settings.page_size"), bg=self.colors["bg"], font=self.fonts["base"]).pack(side=tk.LEFT)
         self.settings_page_size_var = tk.IntVar(value=self.settings.page_size)
-        size_entry = tk.Entry(size_frame, textvariable=self.settings_page_size_var, width=10, font=("Helvetica", 12))
-        size_entry.pack(side=tk.LEFT, padx=10, ipady=3)
+        size_entry_container, size_entry = self._create_styled_entry(size_frame, textvariable=self.settings_page_size_var, width=10, font=self.fonts["base"])
+        size_entry_container.pack(side=tk.LEFT, padx=10)
         self._attach_entry_context_menu(size_entry)
         
         # Column Visibility Setting
-        tk.Label(form, text=self.t("settings.visible_columns"), bg=self.colors["bg"], font=("Helvetica", 12)).pack(anchor="w", padx=20, pady=(15, 8))
+        tk.Label(form, text=self.t("settings.visible_columns"), bg=self.colors["bg"], font=self.fonts["base"]).pack(anchor="w", padx=20, pady=(15, 8))
         
         cols_frame = tk.Frame(form, bg=self.colors["bg"])
         cols_frame.pack(anchor="w", padx=20)
@@ -1922,8 +2091,8 @@ class XJJDesktopApp:
         # Tag Name Entry
         tk.Label(tags_frame, text=self.t("settings.tags_name"), bg=self.colors["bg"]).grid(row=1, column=0, sticky="w", pady=5)
         self.tag_name_var = tk.StringVar()
-        tag_entry = tk.Entry(tags_frame, textvariable=self.tag_name_var, width=42, font=("Helvetica", 14))
-        tag_entry.grid(row=1, column=1, sticky="w", padx=10, pady=5, ipady=5)
+        tag_entry_container, tag_entry = self._create_styled_entry(tags_frame, textvariable=self.tag_name_var, width=42, font=self.fonts["base"])
+        tag_entry_container.grid(row=1, column=1, sticky="w", padx=10, pady=5)
         self._attach_entry_context_menu(tag_entry)
         
         # Tag Buttons
@@ -2539,20 +2708,20 @@ class XJJDesktopApp:
         dialog.geometry(f"+{x}+{y}")
         dialog.deiconify()
         
-        container = tk.Frame(dialog, bg=self.colors["bg"], padx=16, pady=16)
+        container = tk.Frame(dialog, bg=self.colors["white"], padx=16, pady=16)
         container.pack(fill=tk.BOTH, expand=True)
         
-        title = tk.Label(container, text=self.t("dialog.confirm_delete_heading"), bg=self.colors["bg"], fg=self.colors["brand"], font=("Helvetica", 16, "bold"))
+        title = tk.Label(container, text=self.t("dialog.confirm_delete_heading"), bg=self.colors["white"], fg=self.colors["brand"], font=("Helvetica", 16, "bold"))
         title.pack(anchor="w")
         
         msg = tk.Label(
             container,
             text=self.t("dialog.confirm_delete_message", video=video_label),
-            bg=self.colors["bg"], fg=self.colors["gray800"], justify="left", wraplength=380
+            bg=self.colors["white"], fg=self.colors["gray800"], justify="left", wraplength=380
         )
         msg.pack(anchor="w", pady=(8, 12))
         
-        btns = tk.Frame(container, bg=self.colors["bg"])
+        btns = tk.Frame(container, bg=self.colors["white"])
         btns.pack(fill=tk.X, pady=(6, 0))
         
         result = {"confirm": False}
@@ -2610,17 +2779,17 @@ class XJJDesktopApp:
         current_tags = set(t.strip() for t in current_tags_str.split(",") if t.strip())
         
         # Container
-        container = tk.Frame(dialog, bg=self.colors["bg"], padx=15, pady=15)
+        container = tk.Frame(dialog, bg=self.colors["white"], padx=15, pady=15)
         container.pack(fill=tk.BOTH, expand=True)
         
         # Add New Tag Section
-        add_frame = tk.Frame(container, bg=self.colors["bg"])
+        add_frame = tk.Frame(container, bg=self.colors["white"])
         add_frame.pack(fill=tk.X, pady=(0, 10))
         
-        tk.Label(add_frame, text=self.t("tags.add_label"), bg=self.colors["bg"]).pack(side=tk.LEFT)
+        tk.Label(add_frame, text=self.t("tags.add_label"), bg=self.colors["white"]).pack(side=tk.LEFT)
         new_tag_var = tk.StringVar()
-        entry = tk.Entry(add_frame, textvariable=new_tag_var)
-        entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        entry_container, entry = self._create_styled_entry(add_frame, textvariable=new_tag_var, font=self.fonts["base"])
+        entry_container.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
         # Tags List (Checkboxes)
         list_frame = tk.Frame(container, bg=self.colors["white"], relief=tk.GROOVE, bd=1)
@@ -2709,7 +2878,7 @@ class XJJDesktopApp:
         entry.bind("<Return>", lambda e: add_new_tag())
         
         # Buttons
-        btn_frame = tk.Frame(container, bg=self.colors["bg"])
+        btn_frame = tk.Frame(container, bg=self.colors["white"])
         btn_frame.pack(fill=tk.X, pady=(15, 0))
         
         def save():
@@ -2783,16 +2952,16 @@ class XJJDesktopApp:
         dialog.grab_set()
         dialog.focus_set()
         
-        container = tk.Frame(dialog, bg=self.colors["bg"], padx=15, pady=15)
+        container = tk.Frame(dialog, bg=self.colors["white"], padx=15, pady=15)
         container.pack(fill=tk.BOTH, expand=True)
         
-        tk.Label(container, text=self.t("actress.input_label"), bg=self.colors["bg"]).pack(anchor="w")
+        tk.Label(container, text=self.t("actress.input_label"), bg=self.colors["white"]).pack(anchor="w")
         actress_var = tk.StringVar(value=current_actress_str or "")
-        entry = tk.Entry(container, textvariable=actress_var, font=("Helvetica", 13))
-        entry.pack(fill=tk.X, pady=8)
+        entry_container, entry = self._create_styled_entry(container, textvariable=actress_var, font=self.fonts["base"])
+        entry_container.pack(fill=tk.X, pady=8)
         entry.focus_set()
         
-        btn_frame = tk.Frame(container, bg=self.colors["bg"])
+        btn_frame = tk.Frame(container, bg=self.colors["white"])
         btn_frame.pack(fill=tk.X, pady=(6, 0))
         
         def _on_save():
@@ -2836,7 +3005,7 @@ class XJJDesktopApp:
         win.title(title)
         win.geometry("980x520")
         
-        container = tk.Frame(win, bg=self.colors["bg"])
+        container = tk.Frame(win, bg=self.colors["white"])
         container.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
         
         table = ttk.Treeview(container, columns=("video", "file_size", "path"), show="headings")
