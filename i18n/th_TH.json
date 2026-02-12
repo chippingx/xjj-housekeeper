@@ -1,5 +1,8 @@
 {
   "app.title": "小姐姐の管家",
+  "about.title": "เกี่ยวกับ",
+  "about.button": "เกี่ยวกับ",
+  "about.content": "แอป: {app_name}\nเวอร์ชัน: {version}\nผู้พัฒนา: {developer}\nหน้าแรก: {homepage}\nสัญญาอนุญาต: {license}",
   "sidebar.query": "ค้น    หา",
   "sidebar.maintain": "ดู    แล",
   "context.cut": "ตัด",

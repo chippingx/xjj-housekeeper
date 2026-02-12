@@ -54,6 +54,10 @@ class ProjectPathManager:
         # 使用缓存避免重复计算
         if cls._cached_project_root is not None:
             return cls._cached_project_root
+
+        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            cls._cached_project_root = Path(sys._MEIPASS).resolve()
+            return cls._cached_project_root
         
         # 策略1: 环境变量优先
         if env_var in os.environ:

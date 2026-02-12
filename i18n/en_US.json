@@ -1,5 +1,8 @@
 {
   "app.title": "XJJ Housekeeper",
+  "about.title": "About",
+  "about.button": "About",
+  "about.content": "App: {app_name}\nVersion: {version}\nDeveloper: {developer}\nHomepage: {homepage}\nLicense: {license}",
   "sidebar.query": "Query",
   "sidebar.maintain": "Maintain",
   "context.cut": "Cut",

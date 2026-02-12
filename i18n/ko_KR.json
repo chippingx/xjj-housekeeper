@@ -1,5 +1,8 @@
 {
   "app.title": "小姐姐の管家",
+  "about.title": "정보",
+  "about.button": "정보",
+  "about.content": "앱: {app_name}\n버전: {version}\n개발자: {developer}\n홈페이지: {homepage}\n라이선스: {license}",
   "sidebar.query": "검    색",
   "sidebar.maintain": "유    지",
   "context.cut": "잘라내기",

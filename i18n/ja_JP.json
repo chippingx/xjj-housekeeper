@@ -1,5 +1,8 @@
 {
   "app.title": "小姐姐の管家",
+  "about.title": "このアプリについて",
+  "about.button": "このアプリについて",
+  "about.content": "アプリ：{app_name}\nバージョン：{version}\n開発者：{developer}\nホームページ：{homepage}\nライセンス：{license}",
   "sidebar.query": "検    索",
   "sidebar.maintain": "保    守",
   "context.cut": "切り取り",

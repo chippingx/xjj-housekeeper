@@ -1,5 +1,8 @@
 {
   "app.title": "小姐姐の管家",
+  "about.title": "关于",
+  "about.button": "关于",
+  "about.content": "应用：{app_name}\n版本：{version}\n开发者：{developer}\n项目主页：{homepage}\n许可证：{license}",
   "sidebar.query": "查    询",
   "sidebar.maintain": "维    护",
   "context.cut": "剪切",

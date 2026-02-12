@@ -8,7 +8,10 @@ import json
 from datetime import datetime
 import time
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    PROJECT_ROOT = Path(sys._MEIPASS).resolve()
+else:
+    PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 if __package__ is None or __package__ == "":
     if str(PROJECT_ROOT) not in sys.path:
@@ -16,6 +19,7 @@ if __package__ is None or __package__ == "":
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+from tools.path_utils import get_config_path
 
 try:
     from ui.services import search_videos, search_videos_paged, start_maintain, random_videos, latest_videos, latest_videos_paged, broken_videos, set_video_preference, update_video_tags, update_video_actress
@@ -148,6 +152,7 @@ class I18n:
 class XJJDesktopApp:
     def __init__(self) -> None:
         self.settings = AppSettings()
+        self.app_meta = self._load_app_meta()
         self.i18n = I18n(PROJECT_ROOT / "i18n", self.settings.language)
         self._init_i18n_labels()
         self.root = tk.Tk()
@@ -271,6 +276,24 @@ class XJJDesktopApp:
             "settings": self.t("maintain.tab.settings")
         }
 
+    def _load_app_meta(self) -> dict:
+        defaults = {
+            "version": "V1.0",
+            "developer_url": "https://github.com/chippingx/xjj-housekeeper",
+            "homepage": "https://github.com/chippingx/xjj-housekeeper",
+            "license": "MIT"
+        }
+        try:
+            meta_path = get_config_path("config/app_meta.json", calling_file=__file__)
+            if meta_path.exists():
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    defaults.update({k: v for k, v in data.items() if v})
+        except Exception:
+            pass
+        return defaults
+
     def _init_styles(self) -> None:
         style = ttk.Style()
         try:
@@ -374,6 +397,20 @@ class XJJDesktopApp:
         self._add_sidebar_btn("query", self.t("sidebar.query"), lambda: self.show_page("query"))
         self._add_sidebar_btn("maintain", self.t("sidebar.maintain"), lambda: self.show_page("maintain"))
 
+        # 侧边栏底部：版本号链接
+        version_text = self.app_meta.get("version", "V1.0")
+        self.about_link = tk.Label(
+            self.sidebar,
+            text=version_text,
+            bg=self.colors["sidebar_bg"],
+            fg=self.colors["gray700"],
+            font=("Helvetica", 10),
+            cursor="hand2",
+            padx=20, pady=20
+        )
+        self.about_link.pack(side=tk.BOTTOM, anchor="w")
+        self.about_link.bind("<Button-1>", lambda e: self._show_about())
+
         # 2. 主内容区域 (Main)
         self.main_area = tk.Frame(self.root, bg=self.colors["bg"])
         self.main_area.grid(row=0, column=1, sticky="nsew")
@@ -401,6 +438,7 @@ class XJJDesktopApp:
         )
         self.toggle_btn.pack(side=tk.LEFT, padx=10, pady=5)
 
+
     def _toggle_sidebar(self):
         if self.sidebar_visible:
             self.sidebar.grid_remove()
@@ -408,6 +446,102 @@ class XJJDesktopApp:
         else:
             self.sidebar.grid()
             self.sidebar_visible = True
+
+    def _get_about_content(self) -> str:
+        app_name = self.settings.app_title or self.t("app.title")
+        version = self.app_meta.get("version", "V1.0")
+        developer = self.app_meta.get("developer_url", "")
+        homepage = self.app_meta.get("homepage", "")
+        license_name = self.app_meta.get("license", "")
+        return self.t(
+            "about.content",
+            app_name=app_name,
+            version=version,
+            developer=developer,
+            homepage=homepage,
+            license=license_name
+        )
+
+    def _show_about(self):
+        import webbrowser
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title(self.t("about.title"))
+        dialog.geometry("400x260")
+        dialog.resizable(False, False)
+        
+        dialog.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (dialog.winfo_width() // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.focus_set()
+        
+        container = tk.Frame(dialog, bg=self.colors["white"], padx=20, pady=20)
+        container.pack(fill=tk.BOTH, expand=True)
+        
+        # App Title
+        tk.Label(
+            container, 
+            text=self.settings.app_title or self.t("app.title"), 
+            bg=self.colors["white"], 
+            fg=self.colors["brand"], 
+            font=("Helvetica", 20, "bold")
+        ).pack(pady=(10, 5))
+        
+        # Version
+        version = self.app_meta.get("version", "V1.0")
+        tk.Label(
+            container, 
+            text=f"Version {version}", 
+            bg=self.colors["white"], 
+            fg=self.colors["gray700"], 
+            font=("Helvetica", 12)
+        ).pack(pady=(0, 20))
+        
+        # Project Link
+        link_url = self.app_meta.get("developer_url") or self.app_meta.get("homepage") or ""
+        if link_url:
+            link_text = "GitHub Repository"
+            if "github.com" in link_url:
+                try:
+                    # try to extract user/repo
+                    parts = link_url.rstrip("/").split("/")
+                    if len(parts) >= 2:
+                        link_text = f"GitHub: {parts[-2]}/{parts[-1]}"
+                except:
+                    pass
+            
+            link_label = tk.Label(
+                container, 
+                text=link_text, 
+                bg=self.colors["white"], 
+                fg=self.colors["brand"], 
+                font=("Helvetica", 11, "underline"), 
+                cursor="hand2"
+            )
+            link_label.pack(pady=5)
+            link_label.bind("<Button-1>", lambda e: webbrowser.open(link_url))
+            
+        # License
+        license_name = self.app_meta.get("license", "MIT")
+        tk.Label(
+            container, 
+            text=f"License: {license_name}", 
+            bg=self.colors["white"], 
+            fg=self.colors["gray700"], 
+            font=("Helvetica", 10)
+        ).pack(pady=(5, 0))
+        
+        # Copyright
+        tk.Label(
+            container,
+            text="Copyright © 2025 XJJ Housekeeper Contributors",
+            bg=self.colors["white"],
+            fg=self.colors["gray700"],
+            font=("Helvetica", 10)
+        ).pack(side=tk.BOTTOM, pady=10)
 
     def _add_sidebar_btn(self, key: str, text: str, command):
         btn = tk.Button(
@@ -1861,8 +1995,10 @@ class XJJDesktopApp:
         tk.Frame(form, height=1, bg=self.colors["gray200"]).pack(fill=tk.X, padx=20, pady=20)
         
         save_label = self.t("settings.save_button")
-        self.btn_save_settings = self._make_action_button(form, text=save_label, font=("Helvetica", 12), padx=20, pady=8)
-        self.btn_save_settings.pack(anchor="w", padx=20)
+        footer_frame = tk.Frame(form, bg=self.colors["bg"])
+        footer_frame.pack(fill=tk.X, padx=20)
+        self.btn_save_settings = self._make_action_button(footer_frame, text=save_label, font=("Helvetica", 12), padx=20, pady=8)
+        self.btn_save_settings.pack(side=tk.LEFT)
         
         def check_changes(*args):
             # Title
