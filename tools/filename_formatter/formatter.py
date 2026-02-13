@@ -368,7 +368,7 @@ class FilenameFormatter:
         # 2. 迭代处理
         for i, (root, f) in enumerate(all_files):
             if progress_callback:
-                progress_callback(i + 1, total_files, f"Processing {f}...")
+                progress_callback(i + 1, total_files, {"key": "filename_formatter.processing", "filename": f})
             
             handle_file(root, f)
 
@@ -409,3 +409,82 @@ class FilenameFormatter:
             except Exception:
                 # 忽略删除失败的情况
                 pass
+
+
+def load_rules_config(config_path: Path) -> tuple[list[dict], dict]:
+    rules: list[dict] = []
+    settings: dict = {}
+    if config_path.exists():
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            rules = list(data.get("rename_rules", []) or [])
+            settings = data.get("settings", {}) or {}
+            if not isinstance(settings, dict):
+                settings = {}
+        except Exception:
+            rules = []
+            settings = {}
+    return rules, settings
+
+
+def save_rules_config(config_path: Path, rules: list[dict], settings: dict | None = None) -> bool:
+    try:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        clean_rules: list[dict] = []
+        for rule in rules:
+            if not isinstance(rule, dict):
+                continue
+            pattern = str(rule.get("pattern", "")).strip()
+            if not pattern:
+                continue
+            replace = rule.get("replace", "")
+            clean_rules.append({"pattern": pattern, "replace": "" if replace is None else str(replace)})
+        cfg_settings = settings if isinstance(settings, dict) else {}
+        if not cfg_settings:
+            cfg_settings = {"video_extensions": [".mp4", ".mkv", ".mov"], "min_file_size_bytes": 104857600}
+        data = {"settings": cfg_settings, "rename_rules": clean_rules}
+        with open(config_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
+        return True
+    except Exception:
+        return False
+
+
+def run_filename_adjustment(
+    base_path: str,
+    include_subdirs: bool = True,
+    flatten_output: bool = False,
+    dry_run: bool = False,
+    conflict_resolution: str = "rename",
+    log_operations: bool = True,
+    verify_size: bool = False,
+    progress_callback=None,
+    rules_path: str | None = None,
+):
+    rules_env = os.getenv("RENAME_RULES_PATH")
+    if rules_env:
+        formatter = FilenameFormatter(default_rules_path=None)
+    else:
+        formatter = FilenameFormatter(default_rules_path=rules_path if rules_path else None)
+    results = formatter.rename_in_directory(
+        base_path,
+        include_subdirs=include_subdirs,
+        flatten_output=flatten_output,
+        dry_run=dry_run,
+        conflict_resolution=conflict_resolution,
+        log_operations=log_operations,
+        verify_size=verify_size,
+        progress_callback=progress_callback,
+    )
+
+    summary = {
+        "total": len(results),
+        "success": sum(1 for r in results if str(r.status).startswith("success")),
+        "skipped": sum(1 for r in results if str(r.status).startswith("skipped")),
+        "would_skip": sum(1 for r in results if str(r.status).startswith("would skip")),
+        "preview": sum(1 for r in results if str(r.status).startswith("preview")),
+        "errors": sum(1 for r in results if str(r.status).startswith("error")),
+    }
+    log_lines = [f"{r.status}: {r.original} -> {r.new}" for r in results]
+    return {"summary": summary, "log_lines": log_lines}

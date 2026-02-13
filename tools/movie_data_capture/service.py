@@ -1,6 +1,17 @@
 from typing import List, Optional, Set, Dict
 from datetime import datetime
-from .impl.javmenu_client import JavMenuClient
+try:
+    from .impl.javmenu_client import JavMenuClient
+except Exception:
+    class JavMenuClient:
+        def __init__(self):
+            self._error = RuntimeError("MovieDataCaptureService 缺少 JavMenuClient 实现")
+
+        def get_video_info(self, *_args, **_kwargs):
+            raise self._error
+
+        def search_actress_works(self, *_args, **_kwargs):
+            raise self._error
 from .storage import ActressWork, MovieDataStorage, MovieInfoRow, get_default_database_path
 # Import SQLiteStorage to access local video info
 from tools.video_info_collector.sqlite_storage import SQLiteStorage

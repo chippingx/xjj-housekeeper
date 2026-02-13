@@ -1,5 +1,5 @@
 {
-  "app.title": "千姫の居所",
+  "app.title": "倩影の居",
   "about.title": "このアプリについて",
   "about.button": "このアプリについて",
   "about.content": "アプリ：{app_name}\nバージョン：{version}\n開発者：{developer}\nホームページ：{homepage}\nライセンス：{license}",
@@ -61,6 +61,8 @@
   "maintain.status.prepare_adjust": "ファイル名調整の準備: {path}",
   "maintain.status.adjusting": "調整中... {current}/{total}",
   "maintain.status.adjust_done": "ファイル名調整完了",
+  "maintain.status.processing": "処理中: {filename}",
+  "filename_formatter.processing": "処理中: {filename}",
   "maintain.status.prepare_scan": "スキャン準備: {path}",
   "maintain.status.system_error": "システムエラー: {error}",
   "maintain.status.completed": "メンテ完了: {count} 件処理",

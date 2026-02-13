@@ -28,14 +28,14 @@ echo "🛠️ 开始打包..."
 # 使用 .spec 文件进行打包，确保配置（如图标）生效
 poetry run pyinstaller XJJ-Housekeeper.spec --noconfirm || { echo "❌ 打包失败"; read -p "按回车关闭..."; exit 1; }
 
-APP_PATH="dist/千姫の居所.app"
+APP_PATH="dist/倩影の居.app"
 if [ -d "$APP_PATH" ]; then
   echo "✅ 打包成功：$APP_PATH"
   
   # 清理中间产物目录（用户只想要 .app）
-  if [ -d "dist/千姫の居所" ]; then
+  if [ -d "dist/倩影の居" ]; then
     echo "🧹 清理临时构建目录..."
-    rm -rf "dist/千姫の居所"
+    rm -rf "dist/倩影の居"
   fi
 else
   echo "❌ 未找到打包产物，请检查输出"

@@ -1,5 +1,5 @@
 {
-  "app.title": "千姫の居所",
+  "app.title": "倩影の居",
   "about.title": "关于",
   "about.button": "关于",
   "about.content": "应用：{app_name}\n版本：{version}\n开发者：{developer}\n项目主页：{homepage}\n许可证：{license}",
@@ -61,6 +61,8 @@
   "maintain.status.prepare_adjust": "准备文件名调整: {path}",
   "maintain.status.adjusting": "正在调整... {current}/{total}",
   "maintain.status.adjust_done": "文件名调整完成",
+  "maintain.status.processing": "处理中: {filename}",
+  "filename_formatter.processing": "处理中: {filename}",
   "maintain.status.prepare_scan": "准备扫描: {path}",
   "maintain.status.system_error": "系统错误: {error}",
   "maintain.status.completed": "维护完成: 处理 {count} 个文件",

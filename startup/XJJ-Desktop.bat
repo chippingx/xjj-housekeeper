@@ -1,5 +1,5 @@
 @echo off
-REM 千姫の居所 - Windows 启动脚本（原生 Tkinter 客户端）
+REM 倩影の居 - Windows 启动脚本（原生 Tkinter 客户端）
 setlocal enabledelayedexpansion
 
 REM 定位到项目根目录（startup 上一级）

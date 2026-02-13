@@ -21,7 +21,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='千姫の居所',
+    name='倩影の居',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -41,11 +41,11 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='千姫の居所',
+    name='倩影の居',
 )
 app = BUNDLE(
     coll,
-    name='千姫の居所.app',
+    name='倩影の居.app',
     icon='assets/logos/icon.icns',
     bundle_identifier=None,
 )

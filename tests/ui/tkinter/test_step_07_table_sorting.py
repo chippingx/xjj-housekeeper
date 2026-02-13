@@ -1,6 +1,7 @@
 import tkinter as tk
 
 import pytest
+from ui.tkinter.table_helpers import refresh_query_page_columns
 
 
 def _find_treeview(widget: tk.Widget):
@@ -47,7 +48,7 @@ def test_sort_by_file_size_stable_and_toggle_direction():
         # 进入查询页并获取表格
         app.show_page("query")
         app.settings.visible_columns = ["video", "actress", "tags", "file_path", "file_size", "duration", "resolution", "updated_time", "preference"]
-        app._refresh_query_page_columns()
+        refresh_query_page_columns(app)
         table = _find_treeview(app.pages["query"])
         assert table is not None, "未找到结果表格"
 
@@ -116,7 +117,7 @@ def test_sort_by_duration_and_resolution():
 
         app.show_page("query")
         app.settings.visible_columns = ["video", "actress", "tags", "file_path", "file_size", "duration", "resolution", "updated_time", "preference"]
-        app._refresh_query_page_columns()
+        refresh_query_page_columns(app)
         table = _find_treeview(app.pages["query"])
         assert table is not None, "未找到结果表格"
 

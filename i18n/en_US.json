@@ -61,6 +61,8 @@
   "maintain.status.prepare_adjust": "Prepare filename adjustment: {path}",
   "maintain.status.adjusting": "Adjusting... {current}/{total}",
   "maintain.status.adjust_done": "Filename adjustment completed",
+  "maintain.status.processing": "Processing: {filename}",
+  "filename_formatter.processing": "Processing: {filename}",
   "maintain.status.prepare_scan": "Prepare scan: {path}",
   "maintain.status.system_error": "System error: {error}",
   "maintain.status.completed": "Maintenance done: processed {count} files",

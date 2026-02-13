@@ -1,5 +1,5 @@
 {
-  "app.title": "千姫の居所",
+  "app.title": "倩影の居",
   "about.title": "เกี่ยวกับ",
   "about.button": "เกี่ยวกับ",
   "about.content": "แอป: {app_name}\nเวอร์ชัน: {version}\nผู้พัฒนา: {developer}\nหน้าแรก: {homepage}\nสัญญาอนุญาต: {license}",
@@ -61,6 +61,8 @@
   "maintain.status.prepare_adjust": "เตรียมปรับชื่อไฟล์: {path}",
   "maintain.status.adjusting": "กำลังปรับ... {current}/{total}",
   "maintain.status.adjust_done": "ปรับชื่อไฟล์เสร็จสิ้น",
+  "maintain.status.processing": "กำลังประมวลผล: {filename}",
+  "filename_formatter.processing": "กำลังประมวลผล: {filename}",
   "maintain.status.prepare_scan": "เตรียมสแกน: {path}",
   "maintain.status.system_error": "ข้อผิดพลาดของระบบ: {error}",
   "maintain.status.completed": "เสร็จสิ้นการดูแล: ประมวลผล {count} ไฟล์",
