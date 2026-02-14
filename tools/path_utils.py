@@ -26,7 +26,7 @@ class ProjectPathManager:
     PROJECT_MARKERS = [
         'pyproject.toml',  # 最具体的项目标志
         '.git',           # Git 仓库根目录
-        'HANDOVER.md',    # 项目特有文件
+        'doc/HANDOVER.md',    # 项目特有文件
         'tools',          # 项目特有目录
         'README.md'       # 通用文件，优先级最低
     ]
@@ -129,7 +129,7 @@ class ProjectPathManager:
             for marker in cls.PROJECT_MARKERS:
                 if (current / marker).exists():
                     # 对于高优先级标志文件，直接返回
-                    if marker in ['pyproject.toml', '.git', 'HANDOVER.md']:
+                    if marker in ['pyproject.toml', '.git', 'doc/HANDOVER.md']:
                         return current
                     # 对于低优先级标志文件，继续检查是否有其他标志文件
                     elif marker in ['tools', 'README.md']:

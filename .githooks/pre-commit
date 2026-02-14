@@ -37,7 +37,7 @@ done
 if [ "$VIOLATIONS_FOUND" = true ]; then
     echo ""
     echo "🚨 发现违反无迁移无兼容政策的代码！"
-    echo "📖 请查看 NO_MIGRATION_POLICY.md 了解详情"
+    echo "📖 请查看 doc/NO_MIGRATION_POLICY.md 了解详情"
     echo "🔧 请移除所有迁移相关代码后重新提交"
     echo ""
     exit 1

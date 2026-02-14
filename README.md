@@ -45,7 +45,7 @@
   - 合并到主库：`python -m tools.video_info_collector --merge temp_collection.csv --database output/video_info_collector/database/video_database.db --duplicate-strategy update`
   - 导出为 CSV：`python -m tools.video_info_collector --export output/video_info_collector/database/video_database.db --format csv --output output/video_info_collector/csv/exported_data.csv`
   - 通过视频code查询：`python -m tools.video_info_collector --search-video-code "ABC-123,DEF-456"`
-  - 统计信息：`python -m tools.video_info_collector stats --type basic`
+  - 统计信息：`python -m tools.video_info_collector --stats`
   - 完整用法见 `tools/video_info_collector/README.md`
 
 ### 示例输出（文件名规范化）
@@ -78,14 +78,14 @@ would skip: target exists: /path/to/videos/sub/ABC-123.mp4 -> /path/to/videos/AB
 - `tests/` - 测试用例（两大子工具均有覆盖）
 - `.githooks/pre-commit` - 提交前检查脚本
 - `setup_hooks.sh` - 安装 Git 钩子的脚本
-- `NO_MIGRATION_POLICY.md` - 无迁移无兼容政策说明
+- `doc/NO_MIGRATION_POLICY.md` - 无迁移无兼容政策说明
 
 ## 无迁移无兼容政策
 
 - 项目严格禁止迁移和向后兼容代码路径，保持架构简洁。
 - 允许只读的结构自检与信息查询（例如测试中的 `PRAGMA table_info`）。
 - 如需修改数据库结构，直接在创建函数中定义完整结构并重建数据库。
-- 详情见 `NO_MIGRATION_POLICY.md`。
+- 详情见 `doc/NO_MIGRATION_POLICY.md`。
 
 ## 测试
 
@@ -116,7 +116,7 @@ would skip: target exists: /path/to/videos/sub/ABC-123.mp4 -> /path/to/videos/AB
 ## 常见问题
 
 - 为什么提交被阻止？
-  - 可能包含迁移/兼容相关代码。执行 `./setup_hooks.sh` 以安装钩子，并参考 `NO_MIGRATION_POLICY.md` 清理相关代码。
+  - 可能包含迁移/兼容相关代码。执行 `./setup_hooks.sh` 以安装钩子，并参考 `doc/NO_MIGRATION_POLICY.md` 清理相关代码。
 - 如何修改文件重命名规则？
   - 编辑 `tools/filename_formatter/rename_rules.yaml` 或设置环境变量 `RENAME_RULES_PATH` 指向自定义配置。
 - 如何查看/分析主数据库？

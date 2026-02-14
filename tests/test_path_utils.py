@@ -69,7 +69,8 @@ class TestProjectPathManager(unittest.TestCase):
             
             # 创建多个标志文件
             (temp_path / "README.md").touch()
-            (temp_path / "HANDOVER.md").touch()
+            (temp_path / "doc").mkdir()
+            (temp_path / "doc" / "HANDOVER.md").touch()
             (temp_path / "tools").mkdir()
             
             sub_file = temp_path / "sub" / "test.py"

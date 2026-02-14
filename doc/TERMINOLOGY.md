@@ -339,8 +339,8 @@ grep -r "search-code\|--code" --include="*.py" .
 
 ### 相关文档
 - [开发规范](DEVELOPMENT_GUIDELINES.md)
-- [项目README](README.md)
-- [API文档](tools/video_info_collector/README.md)
+- [项目README](../README.md)
+- [API文档](../tools/video_info_collector/README.md)
 
 ### 检查工具
 - 正则表达式扫描脚本
@@ -350,6 +350,6 @@ grep -r "search-code\|--code" --include="*.py" .
 
 ---
 
-**最后更新**: 2024-01-20
+**最后更新**: 2026-02-15
 **维护责任**: 项目开发团队
 **审查周期**: 每次重大功能更新后
