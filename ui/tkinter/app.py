@@ -27,7 +27,7 @@ from tools.filename_formatter.formatter import run_filename_adjustment
 from ui.tkinter.i18n import I18n
 from ui.tkinter.query_page import build_query_page
 from ui.tkinter.layout import add_sidebar_btn, build_layout, show_about
-from ui.tkinter.maintain_settings_page import init_maintain_import, init_maintain_movie_info, init_maintain_settings
+from ui.tkinter.maintain_settings_page import init_maintain_data_backup, init_maintain_import, init_maintain_movie_info, init_maintain_settings
 from ui.tkinter.maintain_buttons import build_maintain_manage_tools
 from ui.tkinter.table_helpers import build_maintain_manage_table, render_table, open_video_list_window
 from ui.tkinter.ui_helpers import (
@@ -218,7 +218,8 @@ class XJJDesktopApp:
             "import": self.t("maintain.tab.import"),
             "manage": self.t("maintain.tab.manage"),
             "movie_info": self.t("maintain.tab.movie_info"),
-            "settings": self.t("maintain.tab.settings")
+            "settings": self.t("maintain.tab.settings"),
+            "backup": self.t("maintain.tab.backup"),
         }
 
     def get_column_labels(self) -> dict[str, str]:
@@ -367,17 +368,20 @@ class XJJDesktopApp:
             "manage": tk.Frame(notebook, bg=self.colors["bg"]),
             "movie_info": tk.Frame(notebook, bg=self.colors["bg"]),
             "settings": tk.Frame(notebook, bg=self.colors["bg"]),
+            "backup": tk.Frame(notebook, bg=self.colors["bg"]),
         }
 
         tab_import_label = self._maintain_tab_labels["import"]
         tab_manage_label = self._maintain_tab_labels["manage"]
         tab_movie_info_label = self._maintain_tab_labels["movie_info"]
         tab_settings_label = self._maintain_tab_labels["settings"]
+        tab_backup_label = self._maintain_tab_labels["backup"]
 
         notebook.add(tab_frames["import"], text=tab_import_label)
         notebook.add(tab_frames["manage"], text=tab_manage_label)
         notebook.add(tab_frames["movie_info"], text=tab_movie_info_label)
         notebook.add(tab_frames["settings"], text=tab_settings_label)
+        notebook.add(tab_frames["backup"], text=tab_backup_label)
 
         self._maintain_notebook = notebook
         self._maintain_settings_tab_id = str(tab_frames["settings"])
@@ -386,6 +390,7 @@ class XJJDesktopApp:
             tab_manage_label: tab_frames["manage"],
             tab_movie_info_label: tab_frames["movie_info"],
             tab_settings_label: tab_frames["settings"],
+            tab_backup_label: tab_frames["backup"],
         }
         self._maintain_tab_probes = {}
         for tab_text, frame in self._maintain_tab_frames.items():
@@ -411,6 +416,7 @@ class XJJDesktopApp:
         time_init(tab_manage_label, self._init_maintain_manage, tab_frames["manage"])
         time_init(tab_movie_info_label, self._init_maintain_movie_info, tab_frames["movie_info"])
         time_init(tab_settings_label, self._init_maintain_settings, tab_frames["settings"])
+        time_init(tab_backup_label, self._init_maintain_data_backup, tab_frames["backup"])
 
         def on_tab_changed(_event):
             start_time = time.perf_counter()
@@ -464,6 +470,7 @@ class XJJDesktopApp:
                 tab_frames["manage"]: tab_manage_label,
                 tab_frames["movie_info"]: tab_movie_info_label,
                 tab_frames["settings"]: tab_settings_label,
+                tab_frames["backup"]: tab_backup_label,
             }
             expose_widgets = dict(frame_map)
             settings_canvas = getattr(self, "_settings_canvas", None)
@@ -840,6 +847,9 @@ class XJJDesktopApp:
 
     def _init_maintain_settings(self, parent):
         init_maintain_settings(self, parent)
+
+    def _init_maintain_data_backup(self, parent):
+        init_maintain_data_backup(self, parent)
 
     def _rebuild_ui(self) -> None:
         current_page = getattr(self, "current_page", "query")

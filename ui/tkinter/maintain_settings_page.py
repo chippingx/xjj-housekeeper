@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import time
@@ -14,6 +15,8 @@ from ui.tkinter.settings_sections import (
 )
 from ui.tkinter.settings_logic import create_settings_change_checker, create_save_settings_handler
 from ui.tkinter.table_helpers import build_movie_info_table
+from tools.data_backup.backup_manager import export_backup, import_backup, initialize_data
+from tools.filename_formatter.formatter import load_rules_config
 
 
 def _get_app_attr(name, default=None):
@@ -41,7 +44,10 @@ def init_maintain_settings(app, parent):
         current_canvas = getattr(app, "_settings_canvas", None)
         if current_canvas is None:
             return
-        widget = app.root.winfo_containing(event.x_root, event.y_root)
+        try:
+            widget = app.root.winfo_containing(event.x_root, event.y_root)
+        except KeyError:
+            return
         if widget is None or not _is_descendant(widget, current_canvas):
             return
         if sys.platform == "darwin":
@@ -478,3 +484,313 @@ def init_maintain_import(app, parent):
     btn_row.pack(anchor="w", pady=4)
     app.make_action_button(btn_row, text=app.t("maintain.filename_adjust"), command=do_filename_adjustment).pack(side=tk.LEFT, padx=6)
     app.make_action_button(btn_row, text=app.t("maintain.ingest"), command=do_maintain).pack(side=tk.LEFT, padx=6)
+
+
+def init_maintain_data_backup(app, parent):
+    tk.Frame(parent, bg=app.colors["bg"], height=12).pack(fill=tk.X)
+    form = tk.Frame(parent, bg=app.colors["bg"])
+    form.pack(fill=tk.BOTH, expand=True, pady=10)
+
+    action_row = tk.Frame(form, bg=app.colors["bg"])
+    action_row.pack(anchor="w", padx=20, pady=(0, 8))
+    status = tk.Label(form, text=app.t("backup.status.ready"), bg=app.colors["bg"], fg=app.colors["gray700"])
+    status.pack(fill=tk.X, padx=20, pady=(0, 6))
+
+    log_frame = tk.Frame(form, bg=app.colors["bg"])
+    log_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 6))
+    log_text = tk.Text(log_frame, height=10, bg=app.colors["white"], fg=app.colors["gray800"], wrap="none")
+    log_vsb = ttk.Scrollbar(log_frame, orient="vertical", command=log_text.yview)
+    log_text.configure(yscrollcommand=log_vsb.set)
+    log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    log_vsb.pack(side=tk.RIGHT, fill=tk.Y)
+
+    desc = tk.Label(
+        form,
+        text=app.t("backup.desc"),
+        bg=app.colors["bg"],
+        fg=app.colors["gray700"],
+        wraplength=760,
+        justify="left",
+    )
+    desc.pack(anchor="w", padx=20, pady=(0, 8))
+
+    def append_log(line: str):
+        log_text.insert(tk.END, line + "\n")
+        log_text.see(tk.END)
+
+    def schedule_log_lines(lines: list[str], delay_ms: int = 200, on_done=None):
+        if not lines:
+            if on_done:
+                on_done()
+            return
+
+        def step(index=0):
+            if index >= len(lines):
+                if on_done:
+                    on_done()
+                return
+            append_log(lines[index])
+            app.root.after(delay_ms, lambda: step(index + 1))
+
+        step()
+
+    def _format_log_value(value):
+        if isinstance(value, (list, dict)):
+            return json.dumps(value, ensure_ascii=False)
+        return str(value)
+
+    def _load_backup_payload(path: str):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f) or {}
+        except Exception:
+            return {}
+
+    def _build_backup_log_lines(payload: dict):
+        data = payload.get("data", {}) or {}
+        database_payload = data.get("database", {}) or {}
+        settings_payload = data.get("settings", {}) or {}
+        rename_payload = data.get("rename_rules", {}) or {}
+
+        tables = [
+            t.get("name") for t in (database_payload.get("tables", []) or []) if isinstance(t, dict) and t.get("name")
+        ]
+        rename_settings = rename_payload.get("settings", {}) or {}
+        rename_rules = rename_payload.get("rename_rules", []) or []
+
+        lines = []
+        for name in tables:
+            lines.append(app.t("backup.log.table", name=name))
+        if settings_payload:
+            lines.append(app.t("backup.log.settings_file"))
+            for key in sorted(settings_payload.keys()):
+                lines.append(app.t("backup.log.settings_key", item=key))
+        if rename_payload:
+            lines.append(app.t("backup.log.rules_file"))
+            for key in sorted(rename_settings.keys()):
+                lines.append(app.t("backup.log.rule_setting", item=key, value=_format_log_value(rename_settings.get(key))))
+            for rule in rename_rules:
+                if not isinstance(rule, dict):
+                    continue
+                pattern = rule.get("pattern", "")
+                replace = rule.get("replace", "")
+                if pattern or replace:
+                    lines.append(app.t("backup.log.rule_item", pattern=pattern, replace=replace))
+
+        config_files = (1 if settings_payload else 0) + (1 if rename_payload else 0)
+        return lines, len(tables), config_files
+
+    def set_busy(is_busy: bool):
+        state = "disabled" if is_busy else "normal"
+        export_btn.configure(state=state)
+        import_btn.configure(state=state)
+        init_btn.configure(state=state)
+
+    def choose_export_path():
+        filedialog_module = _get_app_attr("filedialog", filedialog)
+        file_path = filedialog_module.asksaveasfilename(
+            title=app.t("backup.export_title"),
+            defaultextension=".json",
+            filetypes=[(app.t("backup.filetype.json"), "*.json"), (app.t("filetype.all"), "*.*")],
+            initialfile="data_backup.json",
+        )
+        return file_path or ""
+
+    def choose_import_path():
+        filedialog_module = _get_app_attr("filedialog", filedialog)
+        file_path = filedialog_module.askopenfilename(
+            title=app.t("backup.import_title"),
+            filetypes=[(app.t("backup.filetype.json"), "*.json"), (app.t("filetype.all"), "*.*")],
+        )
+        return file_path or ""
+
+    def do_export():
+        file_path = choose_export_path()
+        if not file_path:
+            return
+        log_text.delete("1.0", tk.END)
+        status.configure(text=app.t("backup.status.exporting"))
+        set_busy(True)
+
+        def worker():
+            error = None
+            result = None
+            try:
+                app_version = None
+                if isinstance(app.app_meta, dict):
+                    app_version = app.app_meta.get("version")
+                result = export_backup(file_path, app_version=app_version)
+            except Exception as exc:
+                error = exc
+
+            def finish():
+                set_busy(False)
+                if error:
+                    status.configure(text=app.t("backup.status.failed"))
+                    messagebox_module = _get_app_attr("messagebox", messagebox)
+                    messagebox_module.showerror(app.t("message.title.failed"), str(error))
+                    return
+                payload = _load_backup_payload(file_path)
+                lines, table_count, config_files = _build_backup_log_lines(payload)
+                lines = [app.t("backup.export_success", path=file_path), *lines]
+                summary_text = app.t("backup.status.exported_summary", tables=table_count, configs=config_files)
+
+                def after_logs():
+                    status.configure(text=summary_text)
+
+                schedule_log_lines(lines, on_done=after_logs)
+
+            app.root.after(0, finish)
+
+        import threading
+        threading.Thread(target=worker, daemon=False).start()
+
+    def do_import():
+        file_path = choose_import_path()
+        if not file_path:
+            return
+        messagebox_module = _get_app_attr("messagebox", messagebox)
+        if not messagebox_module.askyesno(app.t("message.title.tip"), app.t("backup.import_confirm_init")):
+            return
+        log_text.delete("1.0", tk.END)
+        status.configure(text=app.t("backup.status.importing"))
+        set_busy(True)
+
+        def worker():
+            error = None
+            result = None
+            try:
+                result = import_backup(file_path)
+            except Exception as exc:
+                error = exc
+
+            def finish():
+                set_busy(False)
+                if error:
+                    status.configure(text=app.t("backup.status.failed"))
+                    messagebox_module.showerror(app.t("message.title.failed"), str(error))
+                    return
+                try:
+                    import copy
+
+                    app.settings._settings = copy.deepcopy(app.settings.DEFAULT_SETTINGS)
+                    app.settings.load_settings()
+                except Exception:
+                    pass
+                if hasattr(app, "_current_tags"):
+                    app._current_tags = list(app.settings.tags)
+                    app._current_tags.sort()
+                    if hasattr(app, "tags_cb"):
+                        app.tags_cb.configure(values=app._current_tags)
+                        app.tags_cb.set("")
+                    if hasattr(app, "tag_name_var"):
+                        app.tag_name_var.set("")
+                try:
+                    rules_path = app._get_rename_rules_path()
+                    app._rename_rules, app._rename_rules_settings = load_rules_config(rules_path)
+                    app._rename_rules = [r for r in app._rename_rules if r.get("pattern")]
+                    app._rename_rules_original = [dict(r) for r in app._rename_rules]
+                    if hasattr(app, "rename_rules_cb"):
+                        values = [r.get("pattern", "") for r in app._rename_rules if r.get("pattern")]
+                        app.rename_rules_cb.configure(values=values)
+                        app.rename_rules_cb.set("")
+                    if hasattr(app, "rename_rule_pattern_var"):
+                        app.rename_rule_pattern_var.set("")
+                    if hasattr(app, "rename_rule_replace_var"):
+                        app.rename_rule_replace_var.set("")
+                except Exception:
+                    pass
+                payload = _load_backup_payload(file_path)
+                lines, table_count, config_files = _build_backup_log_lines(payload)
+                lines = [app.t("backup.import_success", path=file_path), *lines]
+                summary_text = app.t("backup.status.imported_summary", tables=table_count, configs=config_files)
+
+                def after_logs():
+                    status.configure(text=summary_text)
+                    messagebox_module.showinfo(app.t("message.title.tip"), app.t("backup.import_restart_tip"))
+
+                schedule_log_lines(lines, on_done=after_logs)
+
+            app.root.after(0, finish)
+
+        import threading
+        threading.Thread(target=worker, daemon=False).start()
+
+    def do_initialize():
+        messagebox_module = _get_app_attr("messagebox", messagebox)
+        if not messagebox_module.askyesno(app.t("message.title.tip"), app.t("backup.init_confirm")):
+            return
+        log_text.delete("1.0", tk.END)
+        status.configure(text=app.t("backup.status.initializing"))
+        set_busy(True)
+
+        def worker():
+            error = None
+            result = None
+            try:
+                try:
+                    from ui import services as ui_services
+
+                    svc = getattr(ui_services, "video_service", None)
+                    if svc is not None and getattr(svc, "storage", None):
+                        svc.storage.close()
+                        svc.storage = None
+                        svc.merge_manager = None
+                except Exception:
+                    pass
+                result = initialize_data()
+            except Exception as exc:
+                error = exc
+
+            def finish():
+                set_busy(False)
+                if error:
+                    status.configure(text=app.t("backup.status.failed"))
+                    messagebox_module.showerror(app.t("message.title.failed"), str(error))
+                    return
+                try:
+                    import copy
+
+                    app.settings._settings = copy.deepcopy(app.settings.DEFAULT_SETTINGS)
+                    app.settings.load_settings()
+                except Exception:
+                    pass
+                if hasattr(app, "_current_tags"):
+                    app._current_tags = list(app.settings.tags)
+                    app._current_tags.sort()
+                    if hasattr(app, "tags_cb"):
+                        app.tags_cb.configure(values=app._current_tags)
+                        app.tags_cb.set("")
+                    if hasattr(app, "tag_name_var"):
+                        app.tag_name_var.set("")
+                try:
+                    rules_path = app._get_rename_rules_path()
+                    app._rename_rules, app._rename_rules_settings = load_rules_config(rules_path)
+                    app._rename_rules = [r for r in app._rename_rules if r.get("pattern")]
+                    app._rename_rules_original = [dict(r) for r in app._rename_rules]
+                    if hasattr(app, "rename_rules_cb"):
+                        values = [r.get("pattern", "") for r in app._rename_rules if r.get("pattern")]
+                        app.rename_rules_cb.configure(values=values)
+                        app.rename_rules_cb.set("")
+                    if hasattr(app, "rename_rule_pattern_var"):
+                        app.rename_rule_pattern_var.set("")
+                    if hasattr(app, "rename_rule_replace_var"):
+                        app.rename_rule_replace_var.set("")
+                except Exception:
+                    pass
+                status.configure(text=app.t("backup.status.initialized"))
+                append_log(app.t("backup.init_success"))
+                if result:
+                    append_log(app.t("backup.init_summary", db=result.get("db_cleared"), settings=result.get("settings_reset"), rules=result.get("rules_reset")))
+
+            app.root.after(0, finish)
+
+        import threading
+        threading.Thread(target=worker, daemon=False).start()
+
+    export_btn = app.make_action_button(action_row, text=app.t("backup.export_button"), command=do_export)
+    export_btn.pack(side=tk.LEFT, padx=(0, 10))
+    import_btn = app.make_action_button(action_row, text=app.t("backup.import_button"), command=do_import)
+    import_btn.pack(side=tk.LEFT, padx=(0, 10))
+    init_btn = app.make_action_button(action_row, text=app.t("backup.init_button"), command=do_initialize)
+    init_btn.pack(side=tk.LEFT)
