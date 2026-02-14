@@ -25,7 +25,7 @@ def build_layout(app) -> None:
     add_sidebar_btn(app, "query", app.t("sidebar.query"), lambda: app.show_page("query"))
     add_sidebar_btn(app, "maintain", app.t("sidebar.maintain"), lambda: app.show_page("maintain"))
 
-    version_text = app.app_meta.get("version", "V1.0")
+    version_text = app.t("about.button")
 
     bottom_frame = tk.Frame(app.sidebar, bg=app.colors["sidebar_bg"], padx=28, pady=28)
     bottom_frame.pack(side=tk.BOTTOM, fill=tk.X)
@@ -85,20 +85,31 @@ def show_about(app) -> None:
 
     tk.Label(
         container,
-        text=app.settings.app_title or app.t("app.title"),
+        text="XJJ-Housekeeper",
         bg=app.colors["white"],
         fg=app.colors["gray800"],
-        font=("Helvetica", 20, "bold"),
+        font=("Helvetica", 22, "bold"),
     ).pack(pady=(10, 5))
 
-    version = app.app_meta.get("version", "V1.0")
+    version = app.app_meta.get("version", "1.0.0")
+    app_name = app.app_meta.get("app_name", "倩影の居")
     tk.Label(
         container,
-        text=f"Version {version}",
+        text=f"Version {version} {app_name}",
         bg=app.colors["white"],
         fg=app.colors["gray700"],
-        font=("Helvetica", 12),
+        font=("Helvetica", 14),
     ).pack(pady=(0, 20))
+
+    release_date = app.app_meta.get("release_date", "")
+    if release_date:
+        tk.Label(
+            container,
+            text=app.t("about.release_date", date=release_date),
+            bg=app.colors["white"],
+            fg=app.colors["gray700"],
+            font=("Helvetica", 11),
+        ).pack(pady=(0, 16))
 
     link_url = app.app_meta.get("developer_url") or app.app_meta.get("homepage") or ""
     if link_url:

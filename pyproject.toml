@@ -1,9 +1,9 @@
 [project]
 name = "xjj-housekeeper"
-version = "0.1.0"
-description = "视频文件管理系统"
+version = "1.0.0"
+description = "倩影の居 - 视频文件管理软件"
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "chippingx", email = "chippingx@outlook.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.10"

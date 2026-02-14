@@ -8,6 +8,41 @@ import json
 from datetime import datetime
 import time
 
+def _install_mac_stderr_filter():
+    if sys.platform != "darwin":
+        return
+    patterns = (
+        "NSSavePanel",
+        "NSOpenPanel",
+        "IMKCFRunLoopWakeUpReliable",
+    )
+    original = sys.stderr
+
+    class _Filtered:
+        def __init__(self, wrapped):
+            self._wrapped = wrapped
+
+        def write(self, data):
+            if not data:
+                return 0
+            for pattern in patterns:
+                if pattern in data:
+                    return len(data)
+            return self._wrapped.write(data)
+
+        def flush(self):
+            return self._wrapped.flush()
+
+        def isatty(self):
+            return self._wrapped.isatty()
+
+        def fileno(self):
+            return self._wrapped.fileno()
+
+    sys.stderr = _Filtered(original)
+
+_install_mac_stderr_filter()
+
 if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
     PROJECT_ROOT = Path(sys._MEIPASS).resolve()
 else:
@@ -239,7 +274,8 @@ class XJJDesktopApp:
 
     def _load_app_meta(self) -> dict:
         defaults = {
-            "version": "V1.0",
+            "version": "1.0.0",
+            "release_date": "",
             "developer_url": "https://github.com/chippingx/xjj-housekeeper",
             "homepage": "https://github.com/chippingx/xjj-housekeeper",
             "license": "MIT"
@@ -290,7 +326,8 @@ class XJJDesktopApp:
 
     def _get_about_content(self) -> str:
         app_name = self.settings.app_title or self.t("app.title")
-        version = self.app_meta.get("version", "V1.0")
+        version = self.app_meta.get("version", "1.0.0")
+        release_date = self.app_meta.get("release_date", "")
         developer = self.app_meta.get("developer_url", "")
         homepage = self.app_meta.get("homepage", "")
         license_name = self.app_meta.get("license", "")
@@ -298,6 +335,7 @@ class XJJDesktopApp:
             "about.content",
             app_name=app_name,
             version=version,
+            release_date=release_date,
             developer=developer,
             homepage=homepage,
             license=license_name

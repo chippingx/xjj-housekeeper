@@ -15,8 +15,9 @@ from ui.tkinter.settings_sections import (
 )
 from ui.tkinter.settings_logic import create_settings_change_checker, create_save_settings_handler
 from ui.tkinter.table_helpers import build_movie_info_table
-from tools.data_backup.backup_manager import export_backup, import_backup, initialize_data
+from tools.data_backup.backup_manager import export_backup, import_backup, initialize_data, get_default_backup_paths
 from tools.filename_formatter.formatter import load_rules_config
+from tools.video_info_collector.sqlite_storage import SQLiteStorage
 
 
 def _get_app_attr(name, default=None):
@@ -580,6 +581,53 @@ def init_maintain_data_backup(app, parent):
         config_files = (1 if settings_payload else 0) + (1 if rename_payload else 0)
         return lines, len(tables), config_files
 
+    def _build_current_state_log_lines():
+        tables = []
+        try:
+            db_path = get_default_backup_paths().get("db_path")
+            if db_path:
+                storage = SQLiteStorage(str(db_path))
+                tables = list((storage.get_table_info() or {}).keys())
+                storage.close()
+        except Exception:
+            tables = []
+
+        settings_payload = {}
+        try:
+            settings_payload = dict(getattr(app, "_settings", None) or app.settings._settings or {})
+        except Exception:
+            settings_payload = {}
+
+        rename_rules = []
+        rename_settings = {}
+        try:
+            rules_path = app._get_rename_rules_path()
+            rename_rules, rename_settings = load_rules_config(rules_path)
+        except Exception:
+            rename_rules, rename_settings = [], {}
+
+        lines = []
+        for name in sorted(tables):
+            lines.append(app.t("backup.log.table", name=name))
+        if settings_payload:
+            lines.append(app.t("backup.log.settings_file"))
+            for item in sorted(settings_payload.keys()):
+                lines.append(app.t("backup.log.settings_key", item=item))
+        if rename_settings or rename_rules:
+            lines.append(app.t("backup.log.rules_file"))
+            for item in sorted(rename_settings.keys()):
+                lines.append(app.t("backup.log.rule_setting", item=item, value=_format_log_value(rename_settings.get(item))))
+            for rule in rename_rules:
+                if not isinstance(rule, dict):
+                    continue
+                pattern = rule.get("pattern", "")
+                replace = rule.get("replace", "")
+                if pattern or replace:
+                    lines.append(app.t("backup.log.rule_item", pattern=pattern, replace=replace))
+
+        config_files = (1 if settings_payload else 0) + (1 if rename_settings or rename_rules else 0)
+        return lines, len(tables), config_files
+
     def set_busy(is_busy: bool):
         state = "disabled" if is_busy else "normal"
         export_btn.configure(state=state)
@@ -778,10 +826,13 @@ def init_maintain_data_backup(app, parent):
                         app.rename_rule_replace_var.set("")
                 except Exception:
                     pass
-                status.configure(text=app.t("backup.status.initialized"))
-                append_log(app.t("backup.init_success"))
-                if result:
-                    append_log(app.t("backup.init_summary", db=result.get("db_cleared"), settings=result.get("settings_reset"), rules=result.get("rules_reset")))
+                lines, table_count, config_files = _build_current_state_log_lines()
+                summary_text = app.t("backup.status.initialized_summary", tables=table_count, configs=config_files)
+
+                def after_logs():
+                    status.configure(text=summary_text)
+
+                schedule_log_lines(lines, on_done=after_logs)
 
             app.root.after(0, finish)
 

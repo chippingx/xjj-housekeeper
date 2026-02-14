@@ -48,4 +48,9 @@ app = BUNDLE(
     name='倩影の居.app',
     icon='assets/logos/icon.icns',
     bundle_identifier=None,
+    info_plist={
+        "CFBundleShortVersionString": "1.0.0",
+        "CFBundleVersion": "1.0.0",
+        "CFBundleGetInfoString": "倩影の居 1.0.0 (2026.2.14)",
+    },
 )
