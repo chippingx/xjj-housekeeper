@@ -188,5 +188,6 @@
   "actress.update_failed": "女艺人更新失败，请稍后重试。",
   "filetype.all": "所有文件",
   "filetype.csv": "CSV 文件",
-  "player.default": "默认播放器"
+  "player.default": "默认播放器",
+  "warning.ffprobe_missing": "未找到 ffprobe，无法提取视频元数据。请安装 ffmpeg/ffprobe，或设置环境变量 FFPROBE_PATH/XJJ_FFPROBE_PATH。"
 }

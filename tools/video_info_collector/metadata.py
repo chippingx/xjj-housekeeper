@@ -9,8 +9,68 @@ import os
 import subprocess
 import hashlib
 import re
+import shutil
+import sys
+from pathlib import Path
 from datetime import datetime
 from typing import List, Optional, Dict, Any
+
+
+_i18n_cache: Dict[str, Dict[str, Any]] = {}
+
+
+def _resolve_i18n_dir() -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS).resolve() / "i18n"
+    return Path(__file__).resolve().parents[2] / "i18n"
+
+
+def _normalize_language(value: Optional[str]) -> str:
+    if not value:
+        return "zh_CN"
+    raw = value.split(".")[0].replace("-", "_").strip()
+    if raw in {"C", "POSIX"}:
+        return "en_US"
+    mapping = {
+        "en": "en_US",
+        "zh": "zh_CN",
+        "ja": "ja_JP",
+        "ko": "ko_KR",
+        "th": "th_TH",
+    }
+    if raw in mapping.values():
+        return raw
+    short = raw.split("_")[0]
+    return mapping.get(short, "zh_CN")
+
+
+def _load_i18n(lang: str) -> None:
+    if lang in _i18n_cache:
+        return
+    path = _resolve_i18n_dir() / f"{lang}.json"
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            _i18n_cache[lang] = json.load(f) or {}
+    except Exception:
+        _i18n_cache[lang] = {}
+
+
+def _t(key: str, default: Optional[str] = None) -> str:
+    lang = _normalize_language(os.environ.get("XJJ_LANG") or os.environ.get("LANGUAGE") or os.environ.get("LANG"))
+    _load_i18n(lang)
+    _load_i18n("zh_CN")
+    data = _i18n_cache.get(lang, {})
+    fallback = _i18n_cache.get("zh_CN", {})
+    if key in data:
+        value = data[key]
+    elif key in fallback:
+        value = fallback[key]
+    else:
+        value = default if default is not None else key
+    try:
+        return str(value).format()
+    except Exception:
+        return str(value)
 
 
 def extract_video_code(filename: str) -> Optional[str]:
@@ -57,6 +117,39 @@ def _normalize_frame_rate(value: Any) -> Optional[int]:
         return int(round(float(value)))
     except (ValueError, TypeError):
         return None
+
+
+def _parse_duration_string(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return _normalize_duration(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return _normalize_duration(text)
+    except Exception:
+        pass
+    if ":" in text:
+        parts = text.split(":")
+        try:
+            parts = [p.strip() for p in parts if p.strip()]
+            if len(parts) == 3:
+                hours = float(parts[0])
+                minutes = float(parts[1])
+                seconds = float(parts[2])
+            elif len(parts) == 2:
+                hours = 0.0
+                minutes = float(parts[0])
+                seconds = float(parts[1])
+            else:
+                return None
+            total_seconds = hours * 3600 + minutes * 60 + seconds
+            return _normalize_duration(total_seconds)
+        except (ValueError, TypeError):
+            return None
+    return None
 
 
 def generate_file_fingerprint(
@@ -202,6 +295,9 @@ class VideoInfo:
         }
 
 
+_ffprobe_missing_warned = False
+
+
 class VideoMetadataExtractor:
     """视频元数据提取器"""
     
@@ -271,8 +367,11 @@ class VideoMetadataExtractor:
             解析后的JSON数据，如果失败返回None
         """
         try:
+            ffprobe_cmd = self._resolve_ffprobe_command()
+            if not ffprobe_cmd:
+                return None
             cmd = [
-                'ffprobe',
+                ffprobe_cmd,
                 '-v', 'quiet',
                 '-print_format', 'json',
                 '-show_format',
@@ -295,6 +394,53 @@ class VideoMetadataExtractor:
             pass
         
         return None
+
+    def _resolve_ffprobe_command(self) -> Optional[str]:
+        env_path = os.environ.get("FFPROBE_PATH") or os.environ.get("XJJ_FFPROBE_PATH")
+        if env_path and os.path.exists(env_path):
+            return env_path
+        bundle_candidates = []
+        if hasattr(sys, "_MEIPASS") and sys._MEIPASS:
+            bundle_candidates.extend([
+                os.path.join(sys._MEIPASS, "ffprobe"),
+                os.path.join(sys._MEIPASS, "ffprobe.exe"),
+            ])
+        if getattr(sys, "frozen", False):
+            exe_dir = os.path.dirname(sys.executable)
+            bundle_candidates.extend([
+                os.path.join(exe_dir, "ffprobe"),
+                os.path.join(exe_dir, "ffprobe.exe"),
+            ])
+        for candidate in bundle_candidates:
+            if os.path.exists(candidate):
+                return candidate
+        resolved = shutil.which("ffprobe")
+        if resolved:
+            return resolved
+        if sys.platform == "darwin":
+            candidates = [
+                "/opt/homebrew/bin/ffprobe",
+                "/usr/local/bin/ffprobe",
+                "/usr/bin/ffprobe",
+            ]
+        else:
+            candidates = [
+                "/usr/local/bin/ffprobe",
+                "/usr/bin/ffprobe",
+                "/bin/ffprobe",
+            ]
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                return candidate
+        global _ffprobe_missing_warned
+        if not _ffprobe_missing_warned:
+            message = _t(
+                "warning.ffprobe_missing",
+                "FFprobe not found. Video metadata extraction will be unavailable. Install ffmpeg/ffprobe or set FFPROBE_PATH/XJJ_FFPROBE_PATH.",
+            )
+            print(f"⚠️ {message}", file=sys.stderr)
+            _ffprobe_missing_warned = True
+        return None
     
     def _parse_metadata(self, video_info: VideoInfo, metadata: Dict[str, Any]):
         """
@@ -307,10 +453,13 @@ class VideoMetadataExtractor:
         # 解析格式信息
         format_info = metadata.get('format', {})
         if 'duration' in format_info:
-            try:
-                video_info.duration = _normalize_duration(format_info['duration'])
-            except (ValueError, TypeError):
-                pass
+            video_info.duration = _parse_duration_string(format_info.get('duration'))
+        if video_info.duration is None:
+            tags = format_info.get('tags', {}) if isinstance(format_info.get('tags'), dict) else {}
+            if tags:
+                video_info.duration = _parse_duration_string(
+                    tags.get('DURATION') or tags.get('duration')
+                )
         
         if 'size' in format_info:
             try:
@@ -344,6 +493,15 @@ class VideoMetadataExtractor:
                         video_info.height = int(stream['height'])
                     except (ValueError, TypeError):
                         pass
+                
+                if video_info.duration is None and 'duration' in stream:
+                    video_info.duration = _parse_duration_string(stream.get('duration'))
+                if video_info.duration is None:
+                    stream_tags = stream.get('tags', {}) if isinstance(stream.get('tags'), dict) else {}
+                    if stream_tags:
+                        video_info.duration = _parse_duration_string(
+                            stream_tags.get('DURATION') or stream_tags.get('duration')
+                        )
                 
                 # 解析帧率
                 if 'r_frame_rate' in stream:

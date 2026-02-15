@@ -29,6 +29,7 @@ def open_actress_manager(app, table: ttk.Treeview, item_id: str, video_code: str
     actress_var = tk.StringVar(value=current_actress_str or "")
     entry_container, entry = app.create_styled_entry(container, textvariable=actress_var, font=app.fonts["base"])
     entry_container.pack(fill=tk.X, pady=8)
+    app.attach_entry_context_menu(entry)
     entry.focus_set()
 
     btn_frame = tk.Frame(container, bg=app.colors["white"])

@@ -188,5 +188,6 @@
   "actress.update_failed": "여배우 업데이트 실패. 잠시 후 다시 시도하세요.",
   "filetype.all": "모든 파일",
   "filetype.csv": "CSV 파일",
-  "player.default": "기본 플레이어"
+  "player.default": "기본 플레이어",
+  "warning.ffprobe_missing": "FFprobe not found. Video metadata extraction will be unavailable. Install ffmpeg/ffprobe or set FFPROBE_PATH/XJJ_FFPROBE_PATH."
 }

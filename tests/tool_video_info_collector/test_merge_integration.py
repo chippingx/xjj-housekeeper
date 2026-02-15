@@ -221,7 +221,7 @@ class TestMergeIntegration(unittest.TestCase):
         
         # 创建CSV数据（使用新路径，但相同的指纹和视频代码）
         csv_data = [
-            [self.video1_path, "ABC-123.mp4", "ABC-123", "fp_video1", 1920, 1080, "1920x1080", 
+            [self.video1_path, "ABC-123.mp4", "ABC-123", video1.file_fingerprint, 1920, 1080, "1920x1080", 
              3600.0, "01:00:00", "h264", "aac", 12000, 5000, 30,
              "2024-01-01T12:00:00", "test", ""]
         ]
@@ -463,10 +463,12 @@ class TestMergeIntegration(unittest.TestCase):
         all_videos = self.storage.get_all_videos()
         print(f"Total videos in database: {len(all_videos)}")
         
-        # 不做替换推断，两个记录均为present
+        # 不做替换推断，旧记录应标记为missing
         present_videos = [v for v in all_videos if v.get('file_status') == 'present']
+        missing_videos = [v for v in all_videos if v.get('file_status') == 'missing']
         print(f"Present videos: {len(present_videos)}")
-        self.assertEqual(len(present_videos), 2, "应该有2个present视频")
+        self.assertEqual(len(present_videos), 1, "应该有1个present视频")
+        self.assertEqual(len(missing_videos), 1, "应该有1个missing视频")
         
         # 验证新视频的元数据被正确写入
         new_video = next(v for v in present_videos if v.get('file_path') == new_video_path)
@@ -479,7 +481,62 @@ class TestMergeIntegration(unittest.TestCase):
         master_list = self.storage.get_all_master_list()
         abc_123_entry = next((entry for entry in master_list if entry['video_code'] == 'ABC-123'), None)  # master_list表使用video_code字段
         self.assertIsNotNone(abc_123_entry, "应该有ABC-123的master list条目")
-        self.assertEqual(abc_123_entry['file_count'], 2, "file_count应该是2")
+        self.assertEqual(abc_123_entry['file_count'], 1, "file_count应该是1")
+
+    def test_same_code_old_missing_new_present(self):
+        old_video_path = os.path.join(self.temp_dir, "old_TST-123.mp4")
+        new_video_path = os.path.join(self.temp_dir, "new_TST-123.mp4")
+        
+        with open(old_video_path, 'w') as f:
+            f.write("old TST-123 video content")
+        with open(new_video_path, 'w') as f:
+            f.write("new TST-123 video content")
+        
+        old_video = self._create_video_info(
+            old_video_path,
+            "TST-123",
+            "old_fingerprint_tst_123"
+        )
+        old_video.file_size = 1240000
+        old_video.width = 1280
+        old_video.height = 720
+        old_video.video_codec = "h264"
+        old_video.bit_rate = 5000
+        
+        video_id = self.storage.insert_video_info(old_video)
+        self.assertIsNotNone(video_id)
+        self.storage.upsert_master_list_entry("TST-123")
+        
+        os.remove(old_video_path)
+        
+        csv_data = [
+            [new_video_path, "TST-123_new_version.mp4", "TST-123", "new_fingerprint_tst_123", 1920, 1080, "1920x1080",
+             3600.0, "01:00:00", "h265", "aac", 5280000, 8000, 30,
+             "2024-01-01T12:00:00", "test", ""]
+        ]
+        
+        csv_path = self._create_csv_file("test_same_code_missing_present.csv", csv_data)
+        
+        result = cli_main(['--merge', csv_path, '--database', self.db_path, '--force'])
+        self.assertEqual(result, 0)
+        
+        all_videos = self.storage.get_all_videos()
+        present_videos = [v for v in all_videos if v.get('file_status') == 'present']
+        missing_videos = [v for v in all_videos if v.get('file_status') == 'missing']
+        self.assertEqual(len(present_videos), 1, "应该有1个present视频")
+        self.assertEqual(len(missing_videos), 1, "应该有1个missing视频")
+        
+        present_video = next(v for v in present_videos if v.get('file_path') == new_video_path)
+        self.assertEqual(present_video['video_code'], 'TST-123')
+        self.assertEqual(present_video['file_fingerprint'], 'new_fingerprint_tst_123')
+        
+        missing_video = next(v for v in missing_videos if v.get('file_path') == old_video_path)
+        self.assertEqual(missing_video['video_code'], 'TST-123')
+        
+        master_list = self.storage.get_all_master_list()
+        tst_123_entry = next((entry for entry in master_list if entry['video_code'] == 'TST-123'), None)
+        self.assertIsNotNone(tst_123_entry, "应该有TST-123的master list条目")
+        self.assertEqual(tst_123_entry['file_count'], 1, "file_count应该是1")
 
 
 if __name__ == '__main__':

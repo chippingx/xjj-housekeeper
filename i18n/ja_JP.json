@@ -188,5 +188,6 @@
   "actress.update_failed": "女優の更新に失敗しました。後でもう一度お試しください。",
   "filetype.all": "すべてのファイル",
   "filetype.csv": "CSV ファイル",
-  "player.default": "デフォルトプレーヤー"
+  "player.default": "デフォルトプレーヤー",
+  "warning.ffprobe_missing": "FFprobe not found. Video metadata extraction will be unavailable. Install ffmpeg/ffprobe or set FFPROBE_PATH/XJJ_FFPROBE_PATH."
 }

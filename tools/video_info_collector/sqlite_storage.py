@@ -749,8 +749,15 @@ class SQLiteStorage:
         set_clauses = []
         params = []
         
+        allowed_keys = {
+            'file_path', 'filename', 'width', 'height', 'resolution',
+            'duration', 'duration_formatted', 'video_codec', 'audio_codec',
+            'file_size', 'bit_rate', 'frame_rate', 'logical_path',
+            'created_time', 'video_code', 'file_fingerprint',
+            'file_status', 'last_scan_time', 'last_merge_time'
+        }
         for key, value in update_data.items():
-            if key in ['file_path', 'logical_path', 'file_status', 'last_scan_time', 'last_merge_time']:
+            if key in allowed_keys:
                 set_clauses.append(f"{key} = ?")
                 params.append(value)
         
@@ -898,11 +905,12 @@ class SQLiteStorage:
                             video_info.frame_rate = int(round(float(row['frame_rate'])))
                         else:
                             video_info.frame_rate = None
-                        video_info.file_fingerprint = generate_file_fingerprint(
-                            filename=video_info.filename,
-                            file_size=video_info.file_size,
-                            video_code=video_info.video_code,
-                        )
+                        if not video_info.file_fingerprint:
+                            video_info.file_fingerprint = generate_file_fingerprint(
+                                filename=video_info.filename,
+                                file_size=video_info.file_size,
+                                video_code=video_info.video_code,
+                            )
                         
                         video_id = self.upsert_video_info(video_info)
                         if video_id:
@@ -1519,11 +1527,12 @@ class SQLiteStorage:
                             video_info.frame_rate = int(round(float(row['frame_rate'])))
                         else:
                             video_info.frame_rate = None
-                        video_info.file_fingerprint = generate_file_fingerprint(
-                            filename=video_info.filename,
-                            file_size=video_info.file_size,
-                            video_code=video_info.video_code,
-                        )
+                        if not video_info.file_fingerprint:
+                            video_info.file_fingerprint = generate_file_fingerprint(
+                                filename=video_info.filename,
+                                file_size=video_info.file_size,
+                                video_code=video_info.video_code,
+                            )
                         
                         videos.append(video_info)
                     except (ValueError, KeyError):

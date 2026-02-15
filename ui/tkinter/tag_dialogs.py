@@ -73,7 +73,22 @@ def open_tags_manager(app, table: ttk.Treeview, item_id: str, video_id: int, cur
 
     bind_tags = ("<MouseWheel>", "<Button-4>", "<Button-5>")
     for tag in bind_tags:
-        canvas.bind(tag, _on_mousewheel)
+        canvas.bind(tag, _on_mousewheel, add="+")
+        scrollable_frame.bind(tag, _on_mousewheel, add="+")
+        list_frame.bind(tag, _on_mousewheel, add="+")
+
+    def _bind_mousewheel(_event=None):
+        for tag in bind_tags:
+            dialog.bind_all(tag, _on_mousewheel)
+
+    def _unbind_mousewheel(_event=None):
+        for tag in bind_tags:
+            dialog.unbind_all(tag)
+
+    list_frame.bind("<Enter>", _bind_mousewheel, add="+")
+    list_frame.bind("<Leave>", _unbind_mousewheel, add="+")
+    scrollable_frame.bind("<Enter>", _bind_mousewheel, add="+")
+    scrollable_frame.bind("<Leave>", _unbind_mousewheel, add="+")
 
     check_vars = {}
 

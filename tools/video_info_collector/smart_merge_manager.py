@@ -78,13 +78,21 @@ class SmartMergeManager:
             if action:
                 results[action.action_type].append(action)
         
-        # 检查现有视频中的丢失文件
+        new_fingerprints = {
+            video.file_fingerprint for video in new_videos if video.file_fingerprint
+        }
+
+        # 检查现有视频中的丢失文件（按指纹优先）
         for existing_video in existing_videos:
-            actual_status = self.status_manager.check_file_status(existing_video.file_path)
-            if actual_status == FileStatus.MISSING and existing_video.file_status != FileStatus.MISSING.value:
+            if existing_video.file_fingerprint:
+                is_missing = existing_video.file_fingerprint not in new_fingerprints
+            else:
+                actual_status = self.status_manager.check_file_status(existing_video.file_path)
+                is_missing = actual_status == FileStatus.MISSING
+            if is_missing and existing_video.file_status != FileStatus.MISSING.value:
                 action = MergeAction(
                     'mark_missing', existing_video, 
-                    reason=f"File not found during scan: {existing_video.file_path}"
+                    reason=f"File fingerprint not found during scan: {existing_video.file_path}"
                 )
                 results['mark_missing'].append(action)
         
@@ -105,22 +113,23 @@ class SmartMergeManager:
         Returns:
             Optional[MergeAction]: 合并动作
         """
-        # 1. 检查路径是否已存在
+        # 1. 检查指纹匹配（文件移动检测）
+        if new_video.file_fingerprint and new_video.file_fingerprint in existing_by_fingerprint:
+            existing_video = existing_by_fingerprint[new_video.file_fingerprint]
+            reason = "Fingerprint match, refresh metadata and status"
+            if existing_video.file_path != new_video.file_path:
+                reason = f"File moved from {existing_video.file_path} to {new_video.file_path}"
+            return MergeAction(
+                'update_path', new_video, existing_video,
+                reason=reason
+            )
+
         if new_video.file_path in existing_by_path:
             existing_video = existing_by_path[new_video.file_path]
             return MergeAction(
-                'update_path', new_video, existing_video,
-                reason="Path exists, refresh metadata and status"
+                'insert_new', new_video, existing_video,
+                reason="Fingerprint mismatch at same path"
             )
-        
-        # 2. 检查指纹匹配（文件移动检测）
-        if new_video.file_fingerprint and new_video.file_fingerprint in existing_by_fingerprint:
-            existing_video = existing_by_fingerprint[new_video.file_fingerprint]
-            if existing_video.file_path != new_video.file_path:
-                return MergeAction(
-                    'update_path', new_video, existing_video,
-                    reason=f"File moved from {existing_video.file_path} to {new_video.file_path}"
-                )
         
         # 3. 默认为新插入
         return MergeAction(
@@ -295,6 +304,23 @@ class SmartMergeManager:
         # 执行新插入
         for action in merge_results.get('insert_new', []):
             try:
+                if action.target_info and hasattr(action.target_info, 'id') and action.target_info.id:
+                    original_path = action.target_info.file_path
+                    tombstone_suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    tombstone_path = f"{original_path}.__missing__{action.target_info.id}_{tombstone_suffix}"
+                    if action.target_info.logical_path is None:
+                        action.target_info.logical_path = original_path
+                    action.target_info.file_path = tombstone_path
+                    action.target_info.file_status = FileStatus.MISSING.value
+                    self.storage.update_video_info(
+                        action.target_info.id,
+                        {
+                            'file_path': action.target_info.file_path,
+                            'file_status': action.target_info.file_status,
+                            'logical_path': action.target_info.logical_path,
+                            'last_scan_time': datetime.now().isoformat()
+                        }
+                    )
                 video_id = self.storage.insert_video_info(action.video_info)
                 if video_id:
                     # 更新master list
@@ -321,10 +347,33 @@ class SmartMergeManager:
                 self._update_existing_video(action.target_info, action.video_info)
                 # 持久化到数据库
                 if hasattr(action.target_info, 'id') and action.target_info.id:
+                    duration_formatted = None
+                    if action.target_info.duration:
+                        hours = int(action.target_info.duration // 3600)
+                        minutes = int((action.target_info.duration % 3600) // 60)
+                        seconds = int(action.target_info.duration % 60)
+                        duration_formatted = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                    resolution = None
+                    if action.target_info.width and action.target_info.height:
+                        resolution = f"{action.target_info.width}x{action.target_info.height}"
                     update_data = {
                         'file_path': action.target_info.file_path,
-                        'file_status': action.target_info.file_status,
+                        'filename': action.target_info.filename,
+                        'width': action.target_info.width,
+                        'height': action.target_info.height,
+                        'resolution': resolution,
+                        'duration': action.target_info.duration,
+                        'duration_formatted': duration_formatted,
+                        'video_codec': action.target_info.video_codec,
+                        'audio_codec': action.target_info.audio_codec,
+                        'file_size': action.target_info.file_size,
+                        'bit_rate': action.target_info.bit_rate,
+                        'frame_rate': action.target_info.frame_rate,
                         'logical_path': action.target_info.logical_path,
+                        'created_time': action.target_info.created_time.isoformat() if hasattr(action.target_info.created_time, "isoformat") else action.target_info.created_time,
+                        'video_code': action.target_info.video_code,
+                        'file_fingerprint': action.target_info.file_fingerprint,
+                        'file_status': action.target_info.file_status,
                         'last_scan_time': action.target_info.last_scan_time
                     }
                     self.storage.update_video_info(action.target_info.id, update_data)
@@ -353,6 +402,8 @@ class SmartMergeManager:
                 if hasattr(action.video_info, 'id') and action.video_info.id:
                     update_data = {'file_status': action.video_info.file_status}
                     self.storage.update_video_info(action.video_info.id, update_data)
+                if action.video_info.video_code:
+                    self.storage.update_master_list_file_count(action.video_info.video_code)
                 # 记录merge history
                 if scan_id:
                     self.storage.add_merge_event(
@@ -381,6 +432,18 @@ class SmartMergeManager:
         """更新现有视频记录"""
         # 更新路径和其他可能变化的字段
         existing_video.file_path = new_video.file_path
+        existing_video.filename = new_video.filename or existing_video.filename
+        existing_video.width = new_video.width if new_video.width is not None else existing_video.width
+        existing_video.height = new_video.height if new_video.height is not None else existing_video.height
+        existing_video.duration = new_video.duration if new_video.duration is not None else existing_video.duration
+        existing_video.video_codec = new_video.video_codec or existing_video.video_codec
+        existing_video.audio_codec = new_video.audio_codec or existing_video.audio_codec
+        existing_video.file_size = new_video.file_size if new_video.file_size is not None else existing_video.file_size
+        existing_video.bit_rate = new_video.bit_rate if new_video.bit_rate is not None else existing_video.bit_rate
+        existing_video.frame_rate = new_video.frame_rate if new_video.frame_rate is not None else existing_video.frame_rate
+        existing_video.created_time = new_video.created_time or existing_video.created_time
+        existing_video.video_code = new_video.video_code or existing_video.video_code
+        existing_video.file_fingerprint = new_video.file_fingerprint or existing_video.file_fingerprint
         existing_video.file_status = FileStatus.PRESENT.value
         existing_video.last_scan_time = datetime.now().isoformat()
         existing_video.logical_path = new_video.logical_path or existing_video.logical_path

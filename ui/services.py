@@ -103,6 +103,9 @@ class VideoService:
                 return {"items": [], "total": 0, "page": page, "page_size": page_size}
 
             cursor = self.storage.connection.cursor()
+            cursor.execute("PRAGMA table_info(video_info)")
+            columns = [col[1] for col in cursor.fetchall()]
+            has_file_status = 'file_status' in columns
             
             # 1. 动态构建查询条件
             conditions = []
@@ -110,10 +113,6 @@ class VideoService:
             
             # 1.1 关键词条件
             if search_term:
-                # 检查列和表是否存在
-                cursor.execute("PRAGMA table_info(video_info)")
-                columns = [col[1] for col in cursor.fetchall()]
-                
                 cursor.execute(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name='video_tags'"
                 )
@@ -145,6 +144,10 @@ class VideoService:
                     params.append(like_keyword)
                 
                 conditions.append(f"({' OR '.join(kw_parts)})")
+
+            if has_file_status:
+                conditions.append("(file_status IS NULL OR file_status != ?)")
+                params.append("missing")
             
             # 1.2 偏好条件
             if preference and preference != "all":

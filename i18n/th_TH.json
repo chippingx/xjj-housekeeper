@@ -188,5 +188,6 @@
   "actress.update_failed": "อัปเดตนักแสดงหญิงล้มเหลว กรุณาลองใหม่ภายหลัง",
   "filetype.all": "ไฟล์ทั้งหมด",
   "filetype.csv": "ไฟล์ CSV",
-  "player.default": "โปรแกรมเล่นเริ่มต้น"
+  "player.default": "โปรแกรมเล่นเริ่มต้น",
+  "warning.ffprobe_missing": "FFprobe not found. Video metadata extraction will be unavailable. Install ffmpeg/ffprobe or set FFPROBE_PATH/XJJ_FFPROBE_PATH."
 }

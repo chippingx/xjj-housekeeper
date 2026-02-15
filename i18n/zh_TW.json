@@ -188,5 +188,6 @@
   "actress.update_failed": "女藝人更新失敗，請稍後再試。",
   "filetype.all": "所有檔案",
   "filetype.csv": "CSV 檔案",
-  "player.default": "預設播放器"
+  "player.default": "預設播放器",
+  "warning.ffprobe_missing": "未找到 ffprobe，無法提取影片元資料。請安裝 ffmpeg/ffprobe，或設定環境變數 FFPROBE_PATH/XJJ_FFPROBE_PATH。"
 }

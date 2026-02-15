@@ -22,6 +22,19 @@ where poetry >nul 2>nul || (
   exit /b 1
 )
 
+where ffprobe >nul 2>nul || (
+  echo ❌ ffprobe not found; bundling is not possible
+  echo Suggested: install FFmpeg and add ffprobe to PATH
+  pause
+  exit /b 1
+)
+where ffmpeg >nul 2>nul || (
+  echo ❌ ffmpeg not found; bundling is not possible
+  echo Suggested: install FFmpeg and add ffmpeg to PATH
+  pause
+  exit /b 1
+)
+
 echo 📦 Installing/checking dependencies (Poetry)...
 poetry install --no-interaction || goto :error
 
@@ -30,7 +43,7 @@ poetry run pyinstaller --version >nul 2>nul || (
   poetry add --group dev pyinstaller || goto :error
 )
 
-set XJJ_INCLUDE_FFMPEG=0
+set XJJ_INCLUDE_FFMPEG=1
 set NAME=XJJ-Housekeeper
 set ICON_PATH=assets\icons\xjj.ico
 set ICON_ARG=
@@ -48,7 +61,7 @@ if exist "config\app_meta.json" set ADD_DATA=%ADD_DATA% --add-data "config\app_m
 if exist "tools\video_info_collector\config.yaml" set ADD_DATA=%ADD_DATA% --add-data "tools\video_info_collector\config.yaml;tools\video_info_collector"
 if exist "tools\filename_formatter\rename_rules.yaml" set ADD_DATA=%ADD_DATA% --add-data "tools\filename_formatter\rename_rules.yaml;tools\filename_formatter"
 
-echo 🛠️ Building (without bundling ffmpeg/ffprobe)...
+echo 🛠️ Building (with bundled ffmpeg/ffprobe)...
 poetry run pyinstaller ^
   --noconfirm ^
   --windowed ^

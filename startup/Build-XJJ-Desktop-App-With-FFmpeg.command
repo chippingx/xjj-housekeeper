@@ -15,6 +15,17 @@ for cmd in python3 poetry; do
   fi
 done
 
+if ! command -v ffprobe &> /dev/null; then
+  echo "❌ ffprobe not found; bundling is not possible"
+  echo "   Suggested: brew install ffmpeg"
+  read -p "Press Enter to exit..."; exit 1
+fi
+if ! command -v ffmpeg &> /dev/null; then
+  echo "❌ ffmpeg not found; bundling is not possible"
+  echo "   Suggested: brew install ffmpeg"
+  read -p "Press Enter to exit..."; exit 1
+fi
+
 echo "📦 Installing/checking dependencies (Poetry)..."
 poetry install --no-interaction || { echo "❌ Dependency install failed"; read -p "Press Enter to exit..."; exit 1; }
 
@@ -24,9 +35,9 @@ if ! poetry run pyinstaller --version &> /dev/null; then
   poetry add --group dev pyinstaller || { echo "❌ PyInstaller install failed"; read -p "Press Enter to exit..."; exit 1; }
 fi
 
-export XJJ_INCLUDE_FFMPEG=0
+export XJJ_INCLUDE_FFMPEG=1
 
-echo "🛠️ Building (without bundling ffmpeg/ffprobe)..."
+echo "🛠️ Building (with bundled ffmpeg/ffprobe)..."
 # Build with spec to ensure config (e.g., icon) is applied
 poetry run pyinstaller XJJ-Housekeeper.spec --noconfirm || { echo "❌ Build failed"; read -p "Press Enter to exit..."; exit 1; }
 
