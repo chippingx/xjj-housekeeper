@@ -32,6 +32,7 @@ class ProjectPathManager:
     ]
     
     _cached_project_root: Optional[Path] = None
+    _cached_user_data_root: Optional[Path] = None
     
     @classmethod
     def get_project_root(cls, 
@@ -176,8 +177,11 @@ class ProjectPathManager:
         Returns:
             配置文件的绝对路径
         """
+        relative_path = Path(relative_config_path)
+        if not relative_path.is_absolute() and cls._should_use_user_data_root(relative_path):
+            return cls._get_user_data_root() / relative_path
         project_root = cls.get_project_root(env_var=env_var, calling_file=calling_file)
-        return project_root / relative_config_path
+        return project_root / relative_path
     
     @classmethod
     def resolve_path(cls, 
@@ -198,9 +202,41 @@ class ProjectPathManager:
         
         if path_obj.is_absolute():
             return path_obj
-        
+
+        if cls._should_use_user_data_root(path_obj):
+            return cls._get_user_data_root() / path_obj
+
         project_root = cls.get_project_root(env_var=env_var, calling_file=calling_file)
         return project_root / path_obj
+
+    @classmethod
+    def _should_use_user_data_root(cls, relative_path: Path) -> bool:
+        if not getattr(sys, "frozen", False):
+            return False
+        if not hasattr(sys, "_MEIPASS"):
+            return False
+        parts = relative_path.parts
+        if not parts:
+            return False
+        return parts[0] == "output"
+
+    @classmethod
+    def _get_user_data_root(cls) -> Path:
+        if cls._cached_user_data_root is not None:
+            return cls._cached_user_data_root
+        env_override = os.environ.get("XJJ_HOUSEKEEPER_DATA_DIR")
+        if env_override:
+            cls._cached_user_data_root = Path(env_override).expanduser().resolve()
+            return cls._cached_user_data_root
+        if sys.platform == "darwin":
+            base_dir = Path.home() / "Library" / "Application Support"
+        elif sys.platform.startswith("win"):
+            appdata = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
+            base_dir = Path(appdata) if appdata else (Path.home() / "AppData" / "Roaming")
+        else:
+            base_dir = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+        cls._cached_user_data_root = (base_dir / "倩影の居").resolve()
+        return cls._cached_user_data_root
     
     @classmethod
     def clear_cache(cls):

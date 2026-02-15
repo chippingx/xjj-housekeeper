@@ -121,9 +121,12 @@ def get_default_paths():
     database_dir = output_config.get('database_dir', 'database')
     default_database = output_config.get('default_database', 'video_database.db')
     
+    from ..path_utils import resolve_path
+    base_dir_path = resolve_path(base_dir, calling_file=__file__)
+
     # 确保目录存在
-    csv_path = Path(base_dir) / csv_dir
-    database_path = Path(base_dir) / database_dir
+    csv_path = base_dir_path / csv_dir
+    database_path = base_dir_path / database_dir
     csv_path.mkdir(parents=True, exist_ok=True)
     database_path.mkdir(parents=True, exist_ok=True)
     
