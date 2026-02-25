@@ -708,6 +708,14 @@ def init_maintain_data_backup(app, parent):
             error = None
             result = None
             try:
+                try:
+                    from ui import services as ui_services
+
+                    reset_service = getattr(ui_services, "reset_video_service", None)
+                    if callable(reset_service):
+                        reset_service()
+                except Exception:
+                    pass
                 result = import_backup(file_path)
             except Exception as exc:
                 error = exc
@@ -723,6 +731,14 @@ def init_maintain_data_backup(app, parent):
 
                     app.settings._settings = copy.deepcopy(app.settings.DEFAULT_SETTINGS)
                     app.settings.load_settings()
+                except Exception:
+                    pass
+                try:
+                    from ui import services as ui_services
+
+                    reset_service = getattr(ui_services, "reset_video_service", None)
+                    if callable(reset_service):
+                        reset_service()
                 except Exception:
                     pass
                 if hasattr(app, "_current_tags"):

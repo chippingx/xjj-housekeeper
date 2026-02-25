@@ -583,7 +583,11 @@ def merge_command(args):
         merge_manager = SmartMergeManager(storage)
         
         # 分析合并候选项
-        merge_results = merge_manager.analyze_merge_candidates(new_videos, existing_videos)
+        merge_results = merge_manager.analyze_merge_candidates(
+            new_videos,
+            existing_videos,
+            scan_info['original_scan_path']
+        )
         
         # 记录合并历史（创建scan记录）
         set_current_operation("记录合并历史")

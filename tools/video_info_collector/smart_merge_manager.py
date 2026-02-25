@@ -42,7 +42,8 @@ class SmartMergeManager:
         self.merge_actions: List[MergeAction] = []
     
     def analyze_merge_candidates(self, new_videos: List[VideoInfo], 
-                               existing_videos: List[VideoInfo]) -> Dict[str, List]:
+                               existing_videos: List[VideoInfo],
+                               scan_root: Optional[str] = None) -> Dict[str, List]:
         """
         分析合并候选项
         
@@ -82,8 +83,12 @@ class SmartMergeManager:
             video.file_fingerprint for video in new_videos if video.file_fingerprint
         }
 
+        scan_roots = self._collect_scan_roots(new_videos, scan_root)
+
         # 检查现有视频中的丢失文件（按指纹优先）
         for existing_video in existing_videos:
+            if scan_roots and not self._is_in_scan_scope(existing_video, scan_roots):
+                continue
             if existing_video.file_fingerprint:
                 is_missing = existing_video.file_fingerprint not in new_fingerprints
             else:
@@ -97,6 +102,64 @@ class SmartMergeManager:
                 results['mark_missing'].append(action)
         
         return results
+
+    def _normalize_path(self, path: Optional[str]) -> Optional[str]:
+        if not path:
+            return None
+        normalized = os.path.abspath(path)
+        stripped = normalized.rstrip(os.sep)
+        return stripped if stripped else os.sep
+
+    def _collect_scan_roots(self, new_videos: List[VideoInfo], scan_root: Optional[str]) -> List[str]:
+        roots: List[str] = []
+        if scan_root and scan_root != "unknown":
+            normalized = self._normalize_path(scan_root)
+            if normalized:
+                roots.append(normalized)
+
+        for video in new_videos:
+            normalized = self._normalize_path(video.logical_path)
+            if normalized:
+                roots.append(normalized)
+
+        if not roots:
+            parent_dirs = [os.path.dirname(video.file_path) for video in new_videos if video.file_path]
+            if parent_dirs:
+                try:
+                    common_root = os.path.commonpath(parent_dirs)
+                except ValueError:
+                    common_root = None
+                if common_root:
+                    normalized = self._normalize_path(common_root)
+                    if normalized:
+                        roots.append(normalized)
+                else:
+                    for parent_dir in parent_dirs:
+                        normalized = self._normalize_path(parent_dir)
+                        if normalized:
+                            roots.append(normalized)
+
+        return list(dict.fromkeys(roots))
+
+    def _is_in_scan_scope(self, video: VideoInfo, scan_roots: List[str]) -> bool:
+        if not scan_roots:
+            return True
+
+        candidate_paths: List[str] = []
+        if video.logical_path:
+            candidate_paths.append(video.logical_path)
+        if video.file_path:
+            candidate_paths.append(video.file_path)
+            candidate_paths.append(os.path.dirname(video.file_path))
+
+        for root in scan_roots:
+            for candidate in candidate_paths:
+                normalized = self._normalize_path(candidate)
+                if not normalized:
+                    continue
+                if normalized == root or normalized.startswith(f"{root}{os.sep}"):
+                    return True
+        return False
     
     def _determine_merge_action(self, new_video: VideoInfo, 
                               existing_by_fingerprint: Dict, 

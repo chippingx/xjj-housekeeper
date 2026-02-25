@@ -98,7 +98,7 @@ class EnhancedVideoScanner:
             # 5. 分析合并策略
             print("分析合并策略...")
             merge_results = self.merge_manager.analyze_merge_candidates(
-                new_videos, existing_videos
+                new_videos, existing_videos, directory_path
             )
             
             # 6. 执行合并
@@ -325,7 +325,16 @@ class EnhancedVideoScanner:
         existing_videos = self._load_existing_videos()
         
         # 分析合并策略
-        merge_results = self.merge_manager.analyze_merge_candidates(new_videos, existing_videos)
+        scan_root = None
+        if file_paths:
+            parent_dirs = [os.path.dirname(path) for path in file_paths]
+            try:
+                scan_root = os.path.commonpath(parent_dirs)
+            except ValueError:
+                scan_root = None
+        merge_results = self.merge_manager.analyze_merge_candidates(
+            new_videos, existing_videos, scan_root
+        )
         
         # 执行合并
         merge_stats = self.merge_manager.execute_merge_plan(merge_results)

@@ -27,6 +27,7 @@ sys.path.insert(0, str(project_root))
 from tools.video_info_collector.cli import cli_main
 from tools.video_info_collector.sqlite_storage import SQLiteStorage
 from tools.video_info_collector.metadata import VideoInfo, generate_file_fingerprint
+from tools.video_info_collector.smart_merge_manager import SmartMergeManager
 
 
 class TestMergeIntegration(unittest.TestCase):
@@ -392,6 +393,34 @@ class TestMergeIntegration(unittest.TestCase):
         
         # 应该至少有1个视频记录
         self.assertTrue(len(all_videos) >= 1, "应该至少有1个视频记录")
+
+    def test_mark_missing_respects_scan_root_scope(self):
+        scan_dir = os.path.join(self.temp_dir, "scan_scope")
+        other_dir = os.path.join(self.temp_dir, "other_scope")
+        os.makedirs(scan_dir, exist_ok=True)
+        os.makedirs(other_dir, exist_ok=True)
+
+        in_scope_present_path = os.path.join(scan_dir, "DEF-456.mp4")
+        with open(in_scope_present_path, 'wb') as f:
+            f.write(b'a' * 200)
+
+        in_scope_missing_path = os.path.join(scan_dir, "ABC-123.mp4")
+        out_scope_path = os.path.join(other_dir, "GHI-789.mp4")
+
+        new_video = self._create_video_info(in_scope_present_path, "DEF-456", "fp_in_scope_present")
+        existing_in_scope_missing = self._create_video_info(in_scope_missing_path, "ABC-123", "fp_in_scope_missing")
+        existing_out_scope = self._create_video_info(out_scope_path, "GHI-789", "fp_out_scope_missing")
+
+        merge_manager = SmartMergeManager(self.storage)
+        results = merge_manager.analyze_merge_candidates(
+            [new_video],
+            [existing_in_scope_missing, existing_out_scope],
+            scan_dir
+        )
+
+        missing_paths = {action.video_info.file_path for action in results['mark_missing']}
+        self.assertIn(in_scope_missing_path, missing_paths)
+        self.assertNotIn(out_scope_path, missing_paths)
     
     def test_mark_replaced_scenario(self):
         """测试同video_code不同指纹场景（不做替换推断）"""

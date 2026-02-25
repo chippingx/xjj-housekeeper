@@ -68,7 +68,7 @@
   "backup.summary": "テーブル数: {tables}、規則数: {rules}",
   "backup.import_confirm": "インポートにより既存データが上書きされます。続行しますか？",
   "backup.import_confirm_init": "重複を避けるため、先にデータ初期化を実行してください。インポートを続行しますか？",
-  "backup.import_restart_tip": "インポート後にアプリの再起動を推奨します。",
+  "backup.import_restart_tip": "インポート完了。データと設定は反映済みです。",
   "backup.init_button": "データを初期化",
   "backup.init_confirm": "初期化によりデータベースが消去され、設定とリネーム規則がリセットされます。続行しますか？",
   "backup.init_success": "初期化完了",

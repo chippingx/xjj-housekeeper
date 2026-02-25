@@ -68,7 +68,7 @@
   "backup.summary": "表數量: {tables}，規則數量: {rules}",
   "backup.import_confirm": "匯入將覆蓋現有資料，是否繼續？",
   "backup.import_confirm_init": "匯入前請先執行初始化資料以避免重複。確認繼續匯入？",
-  "backup.import_restart_tip": "匯入完成後建議重新啟動應用以載入新資料。",
+  "backup.import_restart_tip": "匯入完成，資料與設定已刷新。",
   "backup.init_button": "初始化資料",
   "backup.init_confirm": "初始化將清空資料庫並重置設定與重新命名規則，是否繼續？",
   "backup.init_success": "初始化完成",

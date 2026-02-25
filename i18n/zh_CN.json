@@ -68,7 +68,7 @@
   "backup.summary": "表数量: {tables}，规则数量: {rules}",
   "backup.import_confirm": "导入将覆盖现有数据，是否继续？",
   "backup.import_confirm_init": "导入前请先执行初始化数据以避免重复。确认继续导入？",
-  "backup.import_restart_tip": "导入完成后建议重启应用以加载新数据。",
+  "backup.import_restart_tip": "导入完成，数据与配置已刷新。",
   "backup.init_button": "初始化数据",
   "backup.init_confirm": "初始化将清空数据库并重置设置与重命名规则，是否继续？",
   "backup.init_success": "初始化完成",

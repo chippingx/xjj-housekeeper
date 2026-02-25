@@ -928,6 +928,21 @@ class VideoService:
 # 创建全局服务实例
 video_service = VideoService()
 
+def reset_video_service():
+    global video_service
+    try:
+        if video_service.storage:
+            video_service.storage.close()
+    except Exception:
+        pass
+    try:
+        video_service.storage = None
+        video_service.scanner = None
+        video_service.merge_manager = None
+        video_service._deleted_pref_synced = False
+    except Exception:
+        pass
+
 
 def search_videos(keyword: str) -> List[Dict[str, str]]:
     """搜索视频 - 兼容性包装函数"""

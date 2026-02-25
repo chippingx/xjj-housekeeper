@@ -68,7 +68,7 @@
   "backup.summary": "Tables: {tables}, Rules: {rules}",
   "backup.import_confirm": "Import will overwrite current data. Continue?",
   "backup.import_confirm_init": "Initialize data first to avoid duplicates. Continue importing?",
-  "backup.import_restart_tip": "Restart the app to load the new data.",
+  "backup.import_restart_tip": "Import complete. Data and settings are refreshed.",
   "backup.init_button": "Initialize Data",
   "backup.init_confirm": "Initialization will clear the database and reset settings and rename rules. Continue?",
   "backup.init_success": "Initialization completed",
