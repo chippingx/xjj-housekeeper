@@ -89,19 +89,19 @@ Sample Actress|DEF-456||optional
 
 ## ภาพหน้าจอ UI (ข้อมูลตัวอย่าง)
 
-ภาพต่อไปนี้เป็นข้อมูลตัวอย่างเพื่ออธิบายการใช้งานเท่านั้น
+ภาพต่อไปนี้เป็นข้อมูลตัวอย่าง ใช้เพื่ออธิบายหน้าจอและเส้นทางการใช้งานเท่านั้น ไม่ได้มีข้อมูลวิดีโอจริง
 
-### Query: ค้นหา เล่น/เปิดโฟลเดอร์ และความชอบ
+### Query: ค้นหาแบบกว้าง ๆ ดับเบิลคลิกเพื่อเล่น/เปิดโฟลเดอร์ และความชอบ
 
-![Query sample](assets/screenshots/query.svg)
+![Query sample](assets/screenshots/query_en.png)
 
-### Maintain: สแกน นำเข้า และรวมอัจฉริยะ
+### Maintain: สแกน/นำเข้า และรวมอัจฉริยะเมื่อสแกนซ้ำ
 
-![Maintain sample](assets/screenshots/maintain.svg)
+![Maintain sample](assets/screenshots/maintain_en.png)
 
-### Settings/Backup: สลับภาษาและสำรองข้อมูล
+### Settings: สลับภาษา
 
-![Settings sample](assets/screenshots/settings_backup.svg)
+![Settings sample](assets/screenshots/setting_en.png)
 
 ## เริ่มต้นใช้งาน (เดสก์ท็อป)
 

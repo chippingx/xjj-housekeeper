@@ -263,15 +263,15 @@ actress_name|video_code|release_date|title
 
 ### 查询：模糊检索、双击播放/定位、喜好标记
 
-![查询页示例](assets/screenshots/query.svg)
+![查询页示例](assets/screenshots/query_cn.png)
 
 ### 维护：扫描录入与重复扫描的智能合并
 
-![维护页示例](assets/screenshots/maintain.svg)
+![维护页示例](assets/screenshots/maintain_cn.png)
 
-### 设置/备份：语言切换与一键备份
+### 设置：语言切换
 
-![设置页示例](assets/screenshots/settings_backup.svg)
+![设置页示例](assets/screenshots/settings_cn.png)
 
 ## 进阶：命令行工具（可选）
 

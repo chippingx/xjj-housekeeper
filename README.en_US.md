@@ -89,19 +89,19 @@ Sample Actress|DEF-456||optional
 
 ## UI Screenshots (Sample Data)
 
-These screenshots use sample data for demonstration only.
+These screenshots use sample data to demonstrate the UI and workflows, and do not contain any real video information.
 
 ### Query: Search, double-click play/reveal, preferences
 
-![Query sample](assets/screenshots/query.svg)
+![Query page sample](assets/screenshots/query_en.png)
 
 ### Maintain: Scan ingest and smart merge by re-scanning
 
-![Maintain sample](assets/screenshots/maintain.svg)
+![Maintain page sample](assets/screenshots/maintain_en.png)
 
-### Settings/Backup: Language switch and one-click backup
+### Settings: Language switch
 
-![Settings sample](assets/screenshots/settings_backup.svg)
+![Settings page sample](assets/screenshots/setting_en.png)
 
 ## Quick Start (Desktop)
 

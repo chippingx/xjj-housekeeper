@@ -89,19 +89,19 @@ actress_name|video_code|release_date|title
 
 ## 介面截圖（示例資料）
 
-以下截圖為示例資料，用於說明介面與操作流程。
+以下截圖為示例資料，用於說明介面與操作路徑，不包含任何真實影片資訊。
 
-### Query：模糊搜尋、雙擊播放/定位、喜好標記
+### 查詢：模糊檢索、雙擊播放/定位、喜好標記
 
-![Query 範例](assets/screenshots/query.svg)
+![查詢頁示例](assets/screenshots/query_cn.png)
 
-### Maintain：掃描匯入與重複掃描的智慧合併
+### 維護：掃描錄入與重複掃描的智慧合併
 
-![Maintain 範例](assets/screenshots/maintain.svg)
+![維護頁示例](assets/screenshots/maintain_cn.png)
 
-### Settings/Backup：語言切換與一鍵備份
+### 設定：語言切換
 
-![Settings 範例](assets/screenshots/settings_backup.svg)
+![設定頁示例](assets/screenshots/settings_cn.png)
 
 ## 快速開始（桌面端）
 

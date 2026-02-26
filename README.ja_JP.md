@@ -89,19 +89,19 @@ actress_name|video_code|release_date|title
 
 ## UIスクリーンショット（サンプルデータ）
 
-以下は操作説明用のサンプルデータです。
+以下のスクリーンショットはサンプルデータで、画面と操作手順の説明用です。実際の動画情報は含みません。
 
-### Query：検索、再生/表示、好み
+### Query：あいまい検索、ダブルクリックで再生/表示、好み
 
-![Query サンプル](assets/screenshots/query.svg)
+![Query サンプル](assets/screenshots/query_en.png)
 
-### Maintain：スキャン取り込みとスマートマージ
+### Maintain：スキャン取り込みと再スキャン時のスマートマージ
 
-![Maintain サンプル](assets/screenshots/maintain.svg)
+![Maintain サンプル](assets/screenshots/maintain_en.png)
 
-### Settings/Backup：言語切替とバックアップ
+### Settings：言語切替
 
-![Settings サンプル](assets/screenshots/settings_backup.svg)
+![Settings サンプル](assets/screenshots/setting_en.png)
 
 ## クイックスタート（デスクトップ）
 
