@@ -47,7 +47,7 @@ class SQLiteStorage:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS video_info (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                file_path TEXT UNIQUE NOT NULL,
+                file_path TEXT NOT NULL,
                 filename TEXT NOT NULL,
                 width INTEGER,
                 height INTEGER,
